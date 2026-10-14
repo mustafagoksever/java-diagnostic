@@ -1,0 +1,154 @@
+# JAVA 8 WINDOWS DIAGNOSTIC COLLECTOR — SUNUCU KONFİGÜRASYONU
+# Fotoğraflardaki 14 kaynak salt okunur collector şemasına uyarlandı.
+# UTF-8 YAML dosyasıdır; # satırları açıklamadır. Windows yollarını tek
+# tırnakla yazın; / veya \ kullanılabilir. Alan adları sabittir.
+# Collector süreçleri listede görünür; dump/GC/kaynak hedeflerine alınmaz.
+# Genel örnekler için yanındaki config.example.yaml dosyasına bakın.
+
+# mode: remote=uzak sunucu (varsayılan), local=bu bilgisayar.
+# Swing'deki mod seçimiyle oturumluk değiştirebilirsiniz; CLI: --local/--remote.
+mode: remote
+
+# remote: sunucu bağlantısı. Mevcut WMI/DCOM ve SMB erişimleri kullanılır.
+# Sunucuya servis/ajan/JAR kurulmaz; kendi geçici script/çıktıları temizlenir.
+# Kullanıcı adı ve parola burada YAZILMAZ; Swing ekranında oturumluk girilir.
+# CLI kullanıcı adı --user veya konsoldan; parola konsol veya ortamdan alınır.
+remote:
+  host: '15.30.9.176'                         # Sunucu IPv4 adresi veya DNS adı.
+  jdkHome: 'C:/Program Files/Java/jdk1.8.0_281' # SUNUCUDA mevcut JDK kökü.
+  timeoutSeconds: 1800                       # Tüm uzak toplama limiti, 60–7200 s.
+  # Sunucudaki geçici işler önce C:/Temp, alan/erişim yoksa D:/Temp altındadır.
+  # Başlangıçta en az 320 MiB gerekir (256 MiB rezerv + 64 MiB çalışma payı).
+  # auto: C için Temp/C$, D için Temp/DTemp/D$ paylaşımı denenir.
+  # Paylaşımın seçilen diskteki Temp klasörünü kapsaması gerekir.
+  # Standart kullanıcı için örnek: workShare: 'Temp'. Paylaşım ve WMI/DCOM
+  # yetkileri sunucuda önceden verilmiş olmalıdır. Collector bunları oluşturmaz.
+  workShare: auto
+  # Loglar kopyalanmadan önce SUNUCUDA çalıştırılır; uygulama köküne göre yol.
+  # Örnek: <applicationDirectory>/Log/kaydal.bat. Çalışma klasörü Log olur.
+  # BAT'ın bitmesi ve exit code=0 gerekir; hata/timeout varsa log kopyalanmaz,
+  # mevcut dump/sistem verileriyle PARTIAL rapor oluşur. Listelemede çalışmaz.
+  # Bu BAT kendi içeriğine göre kaynak dosyaları değiştirebilir.
+  # nircmd kullanan BAT, açık uygulamanın kullanıcı oturumunda tek seferlik
+  # görevle çağrılır. Görevde parola saklanmaz; görev işlem sonunda silinir.
+  # Aynı hesapla açık, kilitsiz Windows/RDP oturumu ve görev oluşturma izni gerekir.
+  # Devre dışı bırakma örneği: beforeLogCopyBatch: ''
+  beforeLogCopyBatch: 'Log/kaydal.bat'
+  beforeLogCopyTimeoutSeconds: 120           # BAT limiti, 1–600 saniye.
+  beforeLogCopyDelaySeconds: 30              # BAT başarıyla bittikten sonra bekle, 0–300 s.
+
+# installationDirectory: kurulum kökü; gomulu bu kökün altındadır.
+# Göreli yol bu YAML'ın klasörüne göredir. Örnek: 'D:/AresKurulum'.
+installationDirectory: 'C:/aselsan/ares2n'
+
+# applicationDirectory: plugins ve Log klasörlerinin bulunduğu uygulama kökü.
+# auto: önce <kurulum>/uygulama; yoksa kökte plugins/Log varsa kurulum kökü.
+# Hiçbiri yoksa <kurulum>/uygulama varsayılır; eksikler toplamada kaydedilir.
+# Sabit örnek: 'C:/aselsan/ares2n/uygulama'; '.'=doğrudan kurulum kökü.
+# Göreli yol installationDirectory'ye göre çözülür.
+applicationDirectory: auto
+
+# outputDirectory: BU BİLGİSAYARDA şifreli ZIP'lerin yazılacağı klasör.
+# Uzak modda log/installation/application yolları ise SUNUCUDA çözülür.
+# Göreli yol YAML klasörüne göredir. Örnek: 'C:/DiagnosticReports'.
+outputDirectory: 'C:/aselsan'
+
+# collectionDelaySeconds: rapor düğmesi/collect komutundan sonra keşif öncesi
+# bekleme (saniye). 0=bekleme yok; aralık 0–300. Fotoğraftaki bekleme: 10.
+collectionDelaySeconds: 10
+
+# commandTimeoutSeconds: her jcmd/jstack/jps/jstat ve PID kimlik kontrolü
+# için ayrı timeout (saniye); aralık 1–300. Örnek: 30.
+# Timeout yalnız yardımcı komutu kapatır; hedef JVM'yi kapatmaz.
+commandTimeoutSeconds: 20
+
+# scanTimeoutSeconds: Windows keşfi/sistem bilgisi timeout'u (saniye);
+# aralık 1–600. Kaynak takibine de ek timeout payı verir. Örnek: 90.
+scanTimeoutSeconds: 60
+
+# resourceMonitoringSeconds: eş zamanlı CPU/RAM/disk hızı takip süresi.
+# 60=bir dakika; 0=takip kapalı; aralık 0–300. Örnek: 120.
+# Anlık sistem özeti takip kapalıyken de alınır.
+resourceMonitoringSeconds: 60
+
+# resourceSampleIntervalSeconds: örnekler arası hedef bekleme (saniye);
+# aralık 1–10. Sorgu süresi gerçek aralığı uzatabilir. Örnek: 5.
+# Gerçek zamanlar kaynak-izleme.csv dosyasında bulunur.
+resourceSampleIntervalSeconds: 1
+
+# jdkHomes: yerelde önce aranacak JDK kökleri; uzakta remote.jdkHome sonrası
+# sunucudaki ek JDK kökleri. []=ek kök yok; yerelde otomatik araç arama;
+# collector JDK'sı, JAVA_HOME ve PATH de kontrol edilir. JRE araç içermez.
+# Hedef JVM ile uyumlu JDK seçin. Örnek (aşağıdaki [] yerine):
+# jdkHomes:
+#   - 'C:/Java/jdk8'
+#   - 'D:/PortableJava/jdk8'
+jdkHomes: []
+
+# additionalProcessNames: Java barındıran özel wrapper exe adları; tam yol
+# değil süreç adı yazılır. Modülleri okunamayan wrapper'lar için faydalıdır.
+# Örnek: ['ares.exe', 'osgi-service.exe']. Her ad .exe ile bitmelidir.
+additionalProcessNames: []
+
+# collectGcStats: true=jstat -gcutil ile bir GC istatistik örneği dene;
+# false=GC istatistiğini atla. Hiçbir durumda zorla GC çalıştırılmaz.
+collectGcStats: true
+
+# logs: toplanacak dizinler veya tek dosyalar. Hepsi yalnızca kopyalanır.
+# Her girdi için alan açıklamaları ve örnekler:
+# base: göreli path'in kökü. installation=installationDirectory,
+#       application=applicationDirectory, config=yerelde YAML klasörü;
+#       uzakta installationDirectory (sunucuya YAML kopyalanmaz).
+# path: kaynak dizin veya tek dosya. Mutlak yol verilirse base kullanılmaz.
+#       Örnek dizin: 'Log'; tek dosya: 'plugins/ornek/conf/settings.xml'.
+# destination: ZIP içinde logs/ altındaki hedef klasör. Yoksa 01, 02...
+#              kullanılır. Örnek: 'KA/log'. Mutlak yol ve .. yasaktır.
+#              Aynı hedef dosyaya iki kaynak denk gelirse ilk kopya korunur.
+# recursive: true=alt klasörleri tara; false=yalnız üst klasör.
+#            Varsayılan true; tek dosya kaynaklarında etkisizdir.
+# extensions: []=tüm uzantılar; örnek: ['.log', '.txt', '.out'].
+#             Nokta zorunlu; büyük/küçük harf ayrımı yok. XML: ['.xml'].
+# modifiedWithinHours: son kaç saatte değiştirilmiş dosyalar alınacak.
+#                      0=tarih filtresi kapalı; varsayılan 48;
+#                      aralık 0–87600. Örnek: 24 (son bir gün).
+# maxFileSizeMb: dosya başına MiB sınırı (1024*1024 byte). Aşan dosya tamamen
+#               atlanır; kesilmez. Varsayılan 100; aralık 1–10240. Örnek: 50.
+# Son 48 saat ve 100 MiB sınırları fotoğraftan alınmadı; değiştirilebilir.
+logs:
+  # Kimliklendirme iz kayıtları: son 48 saat.
+  - {base: installation, path: 'gomulu/Kimliklendirme/iz', destination: 'Kimliklendirme/iz', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Kimliklendirme ayarları: tarih filtresi kapalı.
+  - {base: installation, path: 'gomulu/Kimliklendirme/config', destination: 'Kimliklendirme/config', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  # Ortak gömülü veriler: son 48 saat.
+  - {base: installation, path: 'gomulu/Gomulu_Ortak/data', destination: 'Gomulu_Ortak', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Tek XML dosyası örneği: eski tarihli ayarlar da alınır.
+  - {base: application, path: 'plugins/denizEDRA/conf/EDRA_configuration.xml', destination: 'KA/denizEDRA/conf', extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  # RadehModel ayarları: tarih filtresi kapalı.
+  - {base: application, path: 'plugins/RadehModel/conf', destination: 'KA/RadehModel/conf', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  # Yayın kayıtları: 100 MiB üzeri dosyalar atlanır.
+  - {base: application, path: 'plugins/yayinKaydi/kayitlar', destination: 'KA/yayinKaydi', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Alkon kayıt/log dosyaları.
+  - {base: installation, path: 'gomulu/Alkon/log/Kayit', destination: 'Alkon/log', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Alkon ayarları: tarih filtresi kapalı.
+  - {base: installation, path: 'gomulu/Alkon/config', destination: 'Alkon/config', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  # AlkonAB ayarları: tarih filtresi kapalı.
+  - {base: installation, path: 'gomulu/AlkonAB/config', destination: 'AlkonAB/config', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  # AlkonAB logları.
+  - {base: installation, path: 'gomulu/AlkonAB/log', destination: 'AlkonAB/log', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # SISKI ayarları: tarih filtresi kapalı.
+  - {base: installation, path: 'gomulu/SISKI/config', destination: 'SISKI/config', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  # Taktik kayıtlar: fotoğraftaki hedef AlkonAB/kayit olarak korunur.
+  - {base: installation, path: 'gomulu/TaktikKayitYKBKurulum/data/kayit', destination: 'AlkonAB/kayit', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Tek debug metni: KA/log içine kopyalanır.
+  - {base: application, path: 'plugins/OrtakKutuphane/conf/denized_debug.txt', destination: 'KA/log', extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Log klasörü debug metniyle aynı hedefi paylaşır. Dosya adı çakışması
+  # manifestte DESTINATION_COLLISION olarak kaydedilir; dosya ezilmez.
+  - {base: application, path: 'Log', destination: 'KA/log', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+  # Sunucudaki ek ED log dizini: mutlak yol, alt klasörler dahil.
+  # ZIP hedefi logs/ED/Log; son 48 saat, dosya başına 100 MiB, tüm uzantılar.
+  - {base: installation, path: 'C:/_Kayit/ED/Log', destination: 'ED/Log', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
+# Config dosyalarına zaman filtresi uygulanmaz; log/veri için son 48 saat seçilir.
+# TASI işlemi uygulanmaz; kaynaklar yalnızca kopyalanır.
+# Fotoğraftaki Log/kaynak.bat dahil hiçbir kaynak script otomatik çalıştırılmaz.
+# Parola YAML'da saklanmaz.
+# CLI alternatifleri: --generate-password veya --password-env DEGISKEN_ADI.

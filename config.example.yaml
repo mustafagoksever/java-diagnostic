@@ -1,0 +1,69 @@
+# GENEL KULLANIM ÖRNEĞİ — açıklamaların tamamı config.yaml içindedir.
+# Çalıştırma: java -jar java-diagnostic-collector.jar gui --config config.example.yaml
+# Örnek yolları sunucudaki gerçek yollarla değiştirin.
+
+mode: remote                  # local seçerseniz bu bilgisayarda toplar.
+remote:
+  host: '15.30.9.176'
+  jdkHome: 'C:/Program Files/Java/jdk1.8.0_281'
+  timeoutSeconds: 1800
+  workShare: auto              # C:/Temp; kullanılamazsa D:/Temp (en az 320 MiB).
+  beforeLogCopyBatch: 'Log/kaydal.bat' # Sunucuda, uygulama köküne göre; '' kapatır.
+  beforeLogCopyTimeoutSeconds: 120    # Bitmeden log kopyalama başlamaz.
+  beforeLogCopyDelaySeconds: 30       # BAT bittikten sonra 30 saniye bekle.
+
+# Kurulum ve plugins/Log köklerini ayrı verebilirsiniz; burada plugins köktedir.
+installationDirectory: 'C:/OrnekUygulama'
+applicationDirectory: '.'
+
+# Göreli çıktı yolu bu YAML'ın yanındaki reports klasörünü kullanır.
+outputDirectory: reports
+collectionDelaySeconds: 0        # Hemen başla.
+commandTimeoutSeconds: 30        # Her tanılama aracı en fazla 30 saniye.
+scanTimeoutSeconds: 60           # Windows keşfi/sistem bilgisi için 60 saniye.
+resourceMonitoringSeconds: 60    # Bir dakika izle; kapatmak için 0 yazın.
+resourceSampleIntervalSeconds: 5 # Örnekler arasında 5 saniye hedef bekleme.
+jdkHomes: []                     # Sabit örnek: ['C:/Java/jdk8'].
+additionalProcessNames: []       # Wrapper örneği: ['osgi-service.exe'].
+collectGcStats: true             # GC istatistiği okumayı dene; GC tetiklemez.
+
+logs:
+  # Örnek 1: Son 24 saatte değiştirilmiş .log/.txt dosyaları ve alt klasörler.
+  - base: application
+    path: 'Log'
+    destination: 'uygulama-loglari'
+    recursive: true
+    extensions: ['.log', '.txt']
+    modifiedWithinHours: 24
+    maxFileSizeMb: 50
+
+  # Örnek 2: Tek XML dosyası, ne kadar eski olursa olsun alınır.
+  - base: application
+    path: 'plugins/ornek/conf/settings.xml'
+    destination: 'ayarlar'
+    recursive: false
+    extensions: ['.xml']
+    modifiedWithinHours: 0
+    maxFileSizeMb: 5
+
+  # Örnek 3: Mutlak kaynak yolu; base belirtmeye gerek yoktur.
+  # Alt klasörler taranmaz, uzantı/tarih filtresi yoktur.
+  - path: 'D:/ServisLoglari'
+    destination: 'servis-loglari'
+    recursive: false
+    extensions: []
+    modifiedWithinHours: 0
+    maxFileSizeMb: 100
+
+  # Örnek 4: Yerelde YAML'a; uzakta kurulum köküne göre göreli klasör.
+  # destination yoksa numaralı hedef.
+  - base: config
+    path: 'ek-loglar'
+    recursive: true
+    extensions: ['.out', '.err']
+    modifiedWithinHours: 48
+    maxFileSizeMb: 20
+
+# Hiç log toplamayacaksanız yukarıdaki logs listesinin yerine logs: [] yazın.
+# Kaynakların eksik olması manifestte hata oluşturur; validate-config yalnız
+# şemayı ve yolların çözümünü doğrular. Parolayı bu dosyaya yazmayın.

@@ -1,0 +1,6 @@
+target/
+.tools/
+reports/
+*.partial
+.idea/
+*.iml
