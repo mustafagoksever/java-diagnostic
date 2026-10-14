@@ -11,6 +11,9 @@ import java.util.function.Consumer;
 
 /** WMI/DCOM and SMB through built-in Windows PowerShell, without WinRM changes. */
 public final class RemotePowerShellTransport implements RemoteTransport {
+    static final List<String> HELPER_RESOURCES = Collections.unmodifiableList(Arrays.asList(
+        "remote-worker.ps1", "remote-batch.ps1", "process-scan.ps1", "system-info.ps1", "resource-monitor.ps1",
+        "remote-extras.ps1", "remote-ping.ps1", "remote-vxworks.ps1"));
     @Override public JsonObject execute(JsonObject settings, Path staging, RemoteConnection connection, Consumer<String> progress) throws IOException, InterruptedException {
         if (!PowerShell.isWindows()) throw new IOException("Uzak toplama Windows üzerinde çalışmalıdır.");
         String systemRoot = System.getenv("SystemRoot");
@@ -58,7 +61,7 @@ public final class RemotePowerShellTransport implements RemoteTransport {
                     .name("password").value(new String(secret)).name("localDirectory").value(staging.toAbsolutePath().toString());
                 writer.name("settings"); new Gson().toJson(settings, writer);
                 writer.name("resources").beginObject();
-                for (String resource : Arrays.asList("remote-worker.ps1", "remote-batch.ps1", "process-scan.ps1", "system-info.ps1", "resource-monitor.ps1")) {
+                for (String resource : HELPER_RESOURCES) {
                     writer.name(resource).value(Base64.getEncoder().encodeToString(PowerShell.resource(resource).getBytes(StandardCharsets.UTF_8)));
                 }
                 writer.endObject().endObject(); writer.flush(); output.write('\n'); output.flush();

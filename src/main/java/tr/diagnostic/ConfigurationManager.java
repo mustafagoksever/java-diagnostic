@@ -46,7 +46,7 @@ public final class ConfigurationManager {
         if (!Arrays.asList("remote", "local").contains(c.mode)) throw new IOException("mode remote veya local olmalı.");
         if (root.containsKey("remote")) {
             Map<String, Object> remote = map(root.get("remote"), "remote");
-            keys(remote, "host", "jdkHome", "timeoutSeconds", "workShare", "beforeLogCopyBatch", "beforeLogCopyTimeoutSeconds", "beforeLogCopyDelaySeconds");
+            keys(remote, "host", "jdkHome", "timeoutSeconds", "workShare", "beforeLogCopyBatch", "beforeLogCopyTimeoutSeconds", "beforeLogCopyDelaySeconds", "ping", "vxworks");
             c.remoteHost = string(remote, "host", c.remoteHost);
             c.remoteJdkHome = string(remote, "jdkHome", c.remoteJdkHome);
             c.remoteTimeoutSeconds = number(remote, "timeoutSeconds", 1800, 60, 7200);
@@ -62,6 +62,8 @@ public final class ConfigurationManager {
                 throw new IOException("remote.beforeLogCopyBatch uygulama köküne göre güvenli bir .bat yolu olmalı.");
             c.remoteBeforeLogCopyTimeoutSeconds = number(remote, "beforeLogCopyTimeoutSeconds", 120, 1, 600);
             c.remoteBeforeLogCopyDelaySeconds = number(remote, "beforeLogCopyDelaySeconds", 30, 0, 300);
+            if (remote.containsKey("ping")) loadPing(map(remote.get("ping"), "remote.ping"), c.ping);
+            if (remote.containsKey("vxworks")) loadVxWorks(map(remote.get("vxworks"), "remote.vxworks"), c.vxworks);
         }
         try { RemoteConnection.validate(c.remoteHost, "configuration-endpoint", c.remoteJdkHome); }
         catch (IllegalArgumentException e) { throw new IOException(e.getMessage()); }
@@ -121,6 +123,66 @@ public final class ConfigurationManager {
         return c;
     }
 
+    private static void loadPing(Map<String, Object> m, CollectorConfiguration.PingSettings p) throws IOException {
+        keys(m, "enabled", "subnet", "addresses", "parallelism", "attempts", "timeoutMillis", "intervalMillis");
+        p.enabled = bool(m, "enabled", false);
+        p.parallelism = number(m, "parallelism", 16, 1, 32);
+        p.attempts = number(m, "attempts", 4, 1, 10);
+        p.timeoutMillis = number(m, "timeoutMillis", 1000, 100, 5000);
+        p.intervalMillis = number(m, "intervalMillis", 250, 0, 1000);
+        for (Object value : list(m, "addresses")) {
+            String address = text(value, "remote.ping.addresses");
+            ipv4Number(address);
+            if (!p.addresses.contains(address)) p.addresses.add(address);
+        }
+        if (m.containsKey("subnet")) {
+            p.subnet = text(m.get("subnet"), "remote.ping.subnet");
+            String[] parts = p.subnet.split("/", -1);
+            if (parts.length != 2 || !parts[1].matches("2[4-9]|30")) throw new IOException("Ping subnet sayısal IPv4 ağı ve /24–/30 olmalı; örnek: 15.30.9.0/24.");
+            long network = ipv4Number(parts[0]);
+            int size = 1 << (32 - Integer.parseInt(parts[1]));
+            if (network % size != 0) throw new IOException("Ping subnet ağ adresi olmalı; örnek: 15.30.9.0/24.");
+            // Exclude the network and broadcast addresses. Expand on the client;
+            // the server receives only validated, explicit numeric targets.
+            for (long host = network + 1; host < network + size - 1; host++) {
+                String address = ((host >>> 24) & 255) + "." + ((host >>> 16) & 255) + "." + ((host >>> 8) & 255) + "." + (host & 255);
+                if (!p.addresses.contains(address)) p.addresses.add(address);
+            }
+        }
+        if (p.addresses.size() > 512 || (p.enabled && p.addresses.isEmpty())) throw new IOException("Etkin ping için subnet veya adres listesinde toplam 1–512 farklı hedef gerekli.");
+    }
+    private static long ipv4Number(String address) throws IOException {
+        String[] octets = address.split("\\.", -1);
+        if (octets.length != 4) throw new IOException("Ping hedefleri sayısal IPv4 adresleri olmalı.");
+        long result = 0;
+        for (String octet : octets) {
+            if (!octet.matches("0|[1-9][0-9]{0,2}") || Integer.parseInt(octet) > 255) throw new IOException("Geçersiz ping IPv4 adresi.");
+            result = (result << 8) | Integer.parseInt(octet);
+        }
+        return result;
+    }
+    private static void loadVxWorks(Map<String, Object> m, CollectorConfiguration.VxWorksSettings v) throws IOException {
+        keys(m, "enabled", "autoDiscoverPorts", "ports", "baudRate", "dataBits", "stopBits", "parity", "flowControl", "portTimeoutSeconds", "commandTimeoutSeconds", "maxOutputMb");
+        v.enabled = bool(m, "enabled", false);
+        v.autoDiscoverPorts = bool(m, "autoDiscoverPorts", false);
+        v.baudRate = number(m, "baudRate", 115200, 110, 921600);
+        v.dataBits = number(m, "dataBits", 8, 5, 8);
+        v.stopBits = number(m, "stopBits", 1, 1, 2);
+        v.parity = string(m, "parity", "None");
+        if (!Arrays.asList("None", "Odd", "Even", "Mark", "Space").contains(v.parity)) throw new IOException("Geçersiz seri parity değeri.");
+        v.flowControl = string(m, "flowControl", "None");
+        if (!v.flowControl.equals("None")) throw new IOException("Bu sürümde seri flowControl None olmalı.");
+        v.portTimeoutSeconds = number(m, "portTimeoutSeconds", 180, 15, 600);
+        v.commandTimeoutSeconds = number(m, "commandTimeoutSeconds", 10, 1, 60);
+        if (v.commandTimeoutSeconds >= v.portTimeoutSeconds) throw new IOException("Komut timeout'u port timeout'undan kısa olmalı.");
+        v.maxOutputMb = number(m, "maxOutputMb", 8, 1, 64);
+        for (Object value : list(m, "ports")) {
+            String port = text(value, "remote.vxworks.ports").toUpperCase(Locale.ROOT);
+            if (!port.matches("COM[1-9][0-9]{0,4}") || Integer.parseInt(port.substring(3)) > 65535) throw new IOException("Seri port COM1–COM65535 aralığında olmalı.");
+            if (!v.ports.contains(port)) v.ports.add(port);
+        }
+        if (v.ports.size() > 64 || (v.enabled && !v.autoDiscoverPorts && v.ports.isEmpty())) throw new IOException("VxWorks için otomatik port keşfi veya 1–64 seri port gerekli.");
+    }
     private static Path resolve(Path base, String s) { return base.resolve(Paths.get(s)).normalize().toAbsolutePath(); }
     private static String text(Object v, String key) throws IOException {
         if (!(v instanceof String) || ((String) v).trim().isEmpty()) throw new IOException(key + " boş olmayan metin olmalı.");

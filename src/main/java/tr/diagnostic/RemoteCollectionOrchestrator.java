@@ -28,6 +28,7 @@ public final class RemoteCollectionOrchestrator {
         data.addProperty("resourceSampleIntervalSeconds", config.resourceSampleIntervalSeconds); data.addProperty("collectGcStats", config.collectGcStats);
         data.addProperty("installationDirectory", config.installationPath); data.addProperty("applicationDirectory", config.applicationPath);
         Gson gson = new Gson(); data.add("selectedPids", selected == null ? JsonNull.INSTANCE : gson.toJsonTree(selected));
+        data.add("ping", gson.toJsonTree(config.ping)); data.add("vxworks", gson.toJsonTree(config.vxworks));
         data.add("additionalProcessNames", gson.toJsonTree(config.additionalProcessNames));
         JsonArray homes = new JsonArray(); for (Path home : config.jdkHomes) homes.add(home.toString()); data.add("jdkHomes", homes);
         JsonArray logs = new JsonArray();
@@ -63,6 +64,10 @@ public final class RemoteCollectionOrchestrator {
             FileSupport.restrictDirectory(staging);
             JsonObject event = transport.execute(settings("collect", selected, connection), staging, connection, progress);
             JsonObject remote = event.getAsJsonObject("result"); Gson gson = new Gson();
+            m.ping = remote.has("ping") && remote.get("ping").isJsonObject() ? remote.getAsJsonObject("ping") : null;
+            m.vxworks = remote.has("vxworks") && remote.get("vxworks").isJsonObject() ? remote.getAsJsonObject("vxworks") : null;
+            if (config.ping.enabled && m.ping == null) m.errors.add("Sunucudan ping toplama sonucu alınamadı.");
+            if (config.vxworks.enabled && m.vxworks == null) m.errors.add("VxWorks toplama sonucu alınamadı.");
             if (remote.has("discovery") && !remote.get("discovery").isJsonNull()) m.discovery = gson.fromJson(remote.get("discovery"), ProcessScanner.ScanResult.class);
             for (JsonElement jvm : ResourceMonitor.array(remote, "jvms")) m.jvms.add(gson.fromJson(jvm, JvmReport.class));
             for (JsonElement excluded : ResourceMonitor.array(remote, "excludedJvms")) m.excludedJvms.add(gson.fromJson(excluded, ExcludedJvm.class));
@@ -95,10 +100,13 @@ public final class RemoteCollectionOrchestrator {
                 else new ResourceMonitor(config, new ProcessCommandExecutor()).write(samples, staging, m.errors);
             }
             progress.accept("Sunucu dump/log analizleri hazırlanıyor...");
+            new RemoteDiagnosticsReportWriter().write(m, staging);
             new ThreadDumpAnalyzer().write(m.jvms, staging); new LogErrorAnalyzer().write(staging);
             boolean incomplete = m.discovery == null || !m.discovery.windowsDiscoverySucceeded || m.jvms.isEmpty() || !m.errors.isEmpty()
                 || m.jvms.stream().anyMatch(j -> j.dumpCount < 3 || j.operations.stream().anyMatch(o -> !o.success))
                 || m.logs.stream().anyMatch(l -> "FAILED".equals(l.status) || l.changedDuringCopy)
+                || (m.ping != null && !RemoteDiagnosticsReportWriter.flag(m.ping,"success"))
+                || (m.vxworks != null && !RemoteDiagnosticsReportWriter.flag(m.vxworks,"success"))
                 || m.operations.stream().anyMatch(o -> !o.success);
             m.collectionStatus = incomplete ? "PARTIAL" : "COMPLETE"; m.completedAt = Instant.now().toString();
             new DiagnosticReportGenerator().write(m, staging);

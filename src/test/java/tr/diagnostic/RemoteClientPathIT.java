@@ -101,7 +101,7 @@ public class RemoteClientPathIT {
             "if(!$fixtureRoot){throw 'Missing isolated fixture root'};"+
             "$fixtureRequest=Get-Content -LiteralPath ([IO.Path]::Combine($fixtureRoot,'request.json')) -Raw|ConvertFrom-Json;"+
             "if(!$fixtureRequest.nonInteractiveTransport -or !$fixtureRequest.interactiveUserSid -or !$fixtureRequest.interactiveUserName){throw 'Missing session identity'};"+
-            "foreach($fixtureResource in @('remote-worker.ps1','remote-batch.ps1','process-scan.ps1','system-info.ps1','resource-monitor.ps1')){"+
+            "foreach($fixtureResource in @('remote-worker.ps1','remote-batch.ps1','process-scan.ps1','system-info.ps1','resource-monitor.ps1','remote-extras.ps1','remote-ping.ps1','remote-vxworks.ps1')){"+
             "if(![IO.File]::Exists([IO.Path]::Combine($fixtureRoot,$fixtureResource))){throw 'Helper not copied'}};"+
             "$fixtureData=[IO.Path]::Combine($fixtureRoot,'data');[void][IO.Directory]::CreateDirectory($fixtureData);"+
             "$fixtureFile=[IO.Path]::Combine($fixtureData,'sample.txt');[IO.File]::WriteAllText($fixtureFile,'UNC fixture payload');"+
@@ -122,7 +122,7 @@ public class RemoteClientPathIT {
             request.addProperty("localDirectory",local.resolve("download").toString());
             JsonObject settings=new JsonObject();settings.addProperty("timeoutSeconds",10);request.add("settings",settings);
             JsonObject resources=new JsonObject();
-            for(String resource:new String[]{"remote-worker.ps1","remote-batch.ps1","process-scan.ps1","system-info.ps1","resource-monitor.ps1"})resources.addProperty(resource,java.util.Base64.getEncoder().encodeToString(PowerShell.resource(resource).getBytes(StandardCharsets.UTF_8)));
+            for(String resource:RemotePowerShellTransport.HELPER_RESOURCES)resources.addProperty(resource,java.util.Base64.getEncoder().encodeToString(PowerShell.resource(resource).getBytes(StandardCharsets.UTF_8)));
             request.add("resources",resources);
             try(Writer writer=new OutputStreamWriter(helper.getOutputStream(),StandardCharsets.UTF_8)){writer.write(request.toString());writer.write('\n');}
             Assert.assertTrue("Client completes",helper.waitFor(30,TimeUnit.SECONDS));

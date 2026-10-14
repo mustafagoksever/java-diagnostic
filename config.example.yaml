@@ -11,6 +11,30 @@ remote:
   beforeLogCopyBatch: 'Log/kaydal.bat' # Sunucuda, uygulama köküne göre; '' kapatır.
   beforeLogCopyTimeoutSeconds: 120    # Bitmeden log kopyalama başlamaz.
   beforeLogCopyDelaySeconds: 30       # BAT bittikten sonra 30 saniye bekle.
+  # Kapalı örnek; enabled: true ile yalnız uzak collect sırasında etkinleşir.
+  ping:
+    enabled: false
+    subnet: '15.30.9.0/24'            # Sunucudan .1–.254 taranır; /24–/30 ağ adresi. Ağ/broadcast hariç.
+    addresses: []                    # Ek hedefler; örnek: ['15.30.10.20']. Toplam en çok 512 IP, tekrarlar çıkarılır.
+    # Yalnız liste örneği: subnet satırını kaldırıp addresses: ['15.30.9.176', '15.30.9.198'] yazın.
+    parallelism: 16                   # Aynı anda 1–32 IP'ye ICMP; TCP port taraması yapmaz.
+    attempts: 1                      # Her adres için 1–10 ICMP isteği; 1 hızlı keşif, 4 paket kaybı takibi.
+    timeoutMillis: 1000               # Tek istek için 100–5000 ms.
+    intervalMillis: 0                 # Aynı IP'de istekler arasında 0–1000 ms.
+  vxworks:
+    # Açıldığında IP/MAC sorgusundan sonra TatlYaz, ardından i/tt/ti ve ağ bilgileri alınır.
+    # Önce version ile doğrulanır. Ek sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'larda tw.
+    enabled: false
+    autoDiscoverPorts: true          # Sunucudaki COM portlarını otomatik bulur.
+    ports: []                        # Manuel örnek: autoDiscoverPorts: false, ports: ['COM7', 'COM17'].
+    baudRate: 115200                  # Örnek bağlantı: 115200 / 8N1.
+    dataBits: 8                      # 5–8.
+    stopBits: 1                      # 1 veya 2.
+    parity: None                     # None/Odd/Even/Mark/Space.
+    flowControl: None                # Yalnız None; DTR/RTS daima kapalı.
+    portTimeoutSeconds: 180          # Port başına 15–600 saniye.
+    commandTimeoutSeconds: 10        # Tek komut 1–60 saniye, port limitinden kısa.
+    maxOutputMb: 8                   # Port başına konsol çıktısı 1–64 MiB.
 
 # Kurulum ve plugins/Log köklerini ayrı verebilirsiniz; burada plugins köktedir.
 installationDirectory: 'C:/OrnekUygulama'

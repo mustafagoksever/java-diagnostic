@@ -213,12 +213,29 @@ function Select-InteractiveTarget {
     $user=[string]$settings.interactiveUserName
     if(!$user -or [string]$settings.interactiveUserSid -notmatch '^S-1-[0-9-]+$'){throw 'INTERACTIVE_SESSION_NOT_FOUND: Oturum kullanici kimligi dogrulanamadi.'}
     $candidates=@($result.discovery.processes|Where-Object{$_.owner -ieq $user -and $_.sessionId -gt 0 -and !$_.collectorProcess})
-    $osgi=@($candidates|Where-Object{$_.mainClass -match '(?i)org\.eclipse\.(osgi|equinox)'})
-    if($osgi.Count -gt 0){$candidates=$osgi}
+    if($null -ne $settings.selectedPids){$candidates=@($candidates|Where-Object{$_.pid -in $settings.selectedPids})}
     $sessions=@($candidates|ForEach-Object{$_.sessionId}|Sort-Object -Unique)
     if($sessions.Count -eq 0){throw 'INTERACTIVE_SESSION_NOT_FOUND: BAT icin ayni kullanicinin uygulamasi acik bir Windows/RDP oturumunda olmali.'}
     if($sessions.Count -ne 1){throw 'INTERACTIVE_SESSION_AMBIGUOUS: Birden fazla uygulama oturumu var; yanlis masaustune komut gonderilmedi.'}
+    # Prefer an OSGi target only within the one verified selected session.
+    # An OSGi process in another session must never override PID selection.
+    $osgi=@($candidates|Where-Object{$_.mainClass -match '(?i)org\.eclipse\.(osgi|equinox)'})
+    if($osgi.Count -gt 0){$candidates=$osgi}
     return $candidates[0]
+}
+function Remove-InteractiveJobTask($folder,[string]$taskName,[string]$description) {
+    try{
+        $remaining=@($folder.GetTasks(1)|Where-Object{$_.Name -eq $taskName})
+        if($remaining.Count -gt 0){
+            if($remaining[0].Definition.RegistrationInfo.Description -ne $description){throw 'Interactive task ownership mismatch'}
+            $remaining[0].Stop(0);$folder.DeleteTask($taskName,0)
+        }
+    }catch{
+        $cleanupError=$_.Exception.Message
+        # The wrapper also deletes this task after publishing its marker.
+        # Accept that race only after a successful fresh absence check.
+        if(@($folder.GetTasks(1)|Where-Object{$_.Name -eq $taskName}).Count -ne 0){throw $cleanupError}
+    }
 }
 function Run-InteractiveBatch($batch,$op) {
     $target=Select-InteractiveTarget
@@ -290,11 +307,7 @@ function Run-InteractiveBatch($batch,$op) {
                     $stopWatch=[Diagnostics.Stopwatch]::StartNew()
                     while(!(Test-Path -LiteralPath $marker) -and $stopWatch.Elapsed.TotalSeconds -lt 5){Start-Sleep -Milliseconds 250}
                 }
-                $remaining=@($folder.GetTasks(1)|Where-Object{$_.Name -eq $taskName})
-                if($remaining.Count -gt 0){
-                    if($remaining[0].Definition.RegistrationInfo.Description -ne $description){throw 'Interactive task ownership mismatch'}
-                    $remaining[0].Stop(0);$folder.DeleteTask($taskName,0)
-                }
+                Remove-InteractiveJobTask $folder $taskName $description
                 $op.taskCleanupSucceeded=$true
             }catch{
                 $op.taskCleanupSucceeded=$false;$result.errors+=,('INTERACTIVE_TASK_CLEANUP_FAILED: '+$_.Exception.Message+'; task '+$taskName)
@@ -432,6 +445,10 @@ try {
                 if($op.success){$jvm.dumpCount++}
                 Write-Json (Join-Path $jobRoot 'progress.json') ([pscustomobject]@{jobId=$settings.jobId;phase='dump';pid=$p.pid;sample=$sample;dumpCount=$jvm.dumpCount})
             }
+        }
+        if($settings.ping.enabled -or $settings.vxworks.enabled){
+            try{. (Join-Path $jobRoot 'remote-extras.ps1');Collect-RemoteExtraDiagnostics}
+            catch{Deadline;$result.errors+=,('EXTRA_DIAGNOSTICS_FAILED: '+$_.Exception.Message)}
         }
         $install=[IO.Path]::GetFullPath($settings.installationDirectory)
         if($settings.applicationDirectory -eq 'auto') {

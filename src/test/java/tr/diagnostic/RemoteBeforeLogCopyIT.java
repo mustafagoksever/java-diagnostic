@@ -18,17 +18,53 @@ public class RemoteBeforeLogCopyIT {
     @Test public void timedOutDesktopBatchCleansUpItsTask() throws Exception {run("interactive-timeout");}
     @Test public void waitsThirtySecondsAfterBatchBeforeCopyingLogs() throws Exception {run("delay");}
     @Test public void cancellationStopsOnlyTheInteractiveJobAndRemovesItsTask() throws Exception {run("interactive-cancel");}
+    @Test public void concurrentTaskDeletionIsAcceptedButRemainingOrForeignTasksFail() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows());Path temp=Files.createTempDirectory("diagnostic-task-cleanup-");
+        try{
+            Path source=Files.write(temp.resolve("worker.ps1"),PowerShell.resource("remote-worker.ps1").getBytes(StandardCharsets.UTF_8));
+            String script="$ErrorActionPreference='Stop';$tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile('"+source.toString().replace("'","''")+"',[ref]$tokens,[ref]$issues);$fn=$ast.Find({param($a)$a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Remove-InteractiveJobTask'},$true);. ([scriptblock]::Create($fn.Extent.Text));"
+                +"$task=[pscustomobject]@{Name='fixture-task';Definition=[pscustomobject]@{RegistrationInfo=[pscustomobject]@{Description='owned'}}};$task|Add-Member ScriptMethod Stop {param($flags) throw 'FIXTURE_TASK_DISAPPEARED'};"
+                +"$folder=[pscustomobject]@{Queries=0;Task=$task;ConcurrentDelete=$true};$folder|Add-Member ScriptMethod GetTasks {param($flags)$this.Queries++;if(!$this.ConcurrentDelete -or $this.Queries -eq 1){return $this.Task}};"
+                +"Remove-InteractiveJobTask $folder 'fixture-task' 'owned';$race=$folder.Queries -eq 2;"
+                +"$folder.ConcurrentDelete=$false;$remaining=$false;try{Remove-InteractiveJobTask $folder 'fixture-task' 'owned'}catch{$remaining=$_.Exception.Message -like '*FIXTURE_TASK_DISAPPEARED*'};"
+                +"$foreign=$false;try{Remove-InteractiveJobTask $folder 'fixture-task' 'other'}catch{$foreign=$_.Exception.Message -like '*ownership mismatch*'};"
+                +"$folder|Add-Member ScriptMethod GetTasks {param($flags)throw 'FIXTURE_ACCESS_DENIED'} -Force;$inaccessible=$false;try{Remove-InteractiveJobTask $folder 'fixture-task' 'owned'}catch{$inaccessible=$_.Exception.Message -like '*FIXTURE_ACCESS_DENIED*'};"
+                +"[pscustomobject]@{race=$race;remaining=$remaining;foreign=$foreign;inaccessible=$inaccessible}|ConvertTo-Json -Compress";
+            CommandResult execution=new PowerShell(new ProcessCommandExecutor()).run(script,10000);Assert.assertTrue(execution.error(),execution.success());
+            JsonObject result=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject();
+            for(String field:Arrays.asList("race","remaining","foreign","inaccessible"))Assert.assertTrue(result.toString(),result.get(field).getAsBoolean());
+        }finally{FileSupport.deleteTree(temp);}
+    }
     @Test public void sessionSelectionRejectsAmbiguousOrDifferentUserDesktops() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());Path temp=Files.createTempDirectory("diagnostic-session-selection-");
         try{
             Path source=Files.write(temp.resolve("worker.ps1"),PowerShell.resource("remote-worker.ps1").getBytes(StandardCharsets.UTF_8));
             String script="$tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile('"+source.toString().replace("'","''")+"',[ref]$tokens,[ref]$issues);$fn=$ast.Find({param($a)$a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Select-InteractiveTarget'},$true);. ([scriptblock]::Create($fn.Extent.Text));"
-                +"$settings=[pscustomobject]@{interactiveUserName='server\\user';interactiveUserSid='S-1-5-21-1'};$a=[pscustomobject]@{owner='server\\user';sessionId=1;collectorProcess=$false;mainClass='app'};$b=[pscustomobject]@{owner='server\\user';sessionId=2;collectorProcess=$false;mainClass='app'};$result=[pscustomobject]@{discovery=[pscustomobject]@{processes=@($a,$b)}};"
+                +"$settings=[pscustomobject]@{interactiveUserName='server\\user';interactiveUserSid='S-1-5-21-1'};$a=[pscustomobject]@{pid=111;owner='server\\user';sessionId=1;collectorProcess=$false;mainClass='app'};$b=[pscustomobject]@{pid=222;owner='server\\user';sessionId=2;collectorProcess=$false;mainClass='app'};$result=[pscustomobject]@{discovery=[pscustomobject]@{processes=@($b,$a)}};"
                 +"$ambiguous=$false;try{Select-InteractiveTarget|Out-Null}catch{$ambiguous=$_.Exception.Message -like 'INTERACTIVE_SESSION_AMBIGUOUS*'};"
-                +"$a.mainClass='org.eclipse.osgi.jar';$preferred=(Select-InteractiveTarget).sessionId;$settings.interactiveUserName='server\\other';$other=$false;try{Select-InteractiveTarget|Out-Null}catch{$other=$_.Exception.Message -like 'INTERACTIVE_SESSION_NOT_FOUND*'};"
-                +"[pscustomobject]@{ambiguous=$ambiguous;preferred=$preferred;other=$other}|ConvertTo-Json -Compress";
+                +"$a.mainClass='org.eclipse.osgi.jar';$osgiAmbiguous=$false;try{Select-InteractiveTarget|Out-Null}catch{$osgiAmbiguous=$_.Exception.Message -like 'INTERACTIVE_SESSION_AMBIGUOUS*'};"
+                +"$b.sessionId=1;$preferred=(Select-InteractiveTarget).pid;$settings.interactiveUserName='server\\other';$other=$false;try{Select-InteractiveTarget|Out-Null}catch{$other=$_.Exception.Message -like 'INTERACTIVE_SESSION_NOT_FOUND*'};"
+                +"[pscustomobject]@{ambiguous=$ambiguous;osgiAmbiguous=$osgiAmbiguous;preferred=$preferred;other=$other}|ConvertTo-Json -Compress";
             CommandResult execution=new PowerShell(new ProcessCommandExecutor()).run(script,10000);Assert.assertTrue(execution.error(),execution.success());
-            JsonObject result=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject();Assert.assertTrue(result.get("ambiguous").getAsBoolean());Assert.assertEquals(1,result.get("preferred").getAsInt());Assert.assertTrue(result.get("other").getAsBoolean());
+            JsonObject result=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject();Assert.assertTrue(result.get("ambiguous").getAsBoolean());Assert.assertTrue(result.get("osgiAmbiguous").getAsBoolean());Assert.assertEquals(111,result.get("preferred").getAsInt());Assert.assertTrue(result.get("other").getAsBoolean());
+        }finally{FileSupport.deleteTree(temp);}
+    }
+    @Test public void selectedPidDeterminesBatchSessionAndMissingTargetsNeverFallBack() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows());Path temp=Files.createTempDirectory("diagnostic-selected-session-");
+        try{
+            Path source=Files.write(temp.resolve("worker.ps1"),PowerShell.resource("remote-worker.ps1").getBytes(StandardCharsets.UTF_8));
+            String script="$ErrorActionPreference='Stop';$tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile('"+source.toString().replace("'","''")+"',[ref]$tokens,[ref]$issues);$fn=$ast.Find({param($a)$a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Select-InteractiveTarget'},$true);. ([scriptblock]::Create($fn.Extent.Text));"
+                +"$settings=[pscustomobject]@{interactiveUserName='server\\user';interactiveUserSid='S-1-5-21-1';selectedPids=@(222)};$a=[pscustomobject]@{pid=111;owner='server\\user';sessionId=1;collectorProcess=$false;mainClass='org.eclipse.osgi.fixture'};$b=[pscustomobject]@{pid=222;owner='server\\user';sessionId=2;collectorProcess=$false;mainClass='chosen.application'};$result=[pscustomobject]@{discovery=[pscustomobject]@{processes=@($a,$b)}};"
+                +"$selected=Select-InteractiveTarget;$selectedPid=$selected.pid;$selectedSession=$selected.sessionId;"
+                +"$settings.selectedPids=@(111,222);$ambiguous=$false;try{Select-InteractiveTarget|Out-Null}catch{$ambiguous=$_.Exception.Message -like 'INTERACTIVE_SESSION_AMBIGUOUS*'};"
+                +"$settings.selectedPids=@();$empty=$false;try{Select-InteractiveTarget|Out-Null}catch{$empty=$_.Exception.Message -like 'INTERACTIVE_SESSION_NOT_FOUND*'};"
+                +"$settings.selectedPids=@(999);$missing=$false;try{Select-InteractiveTarget|Out-Null}catch{$missing=$_.Exception.Message -like 'INTERACTIVE_SESSION_NOT_FOUND*'};"
+                +"$settings.selectedPids=@(222);$b.owner='server\\other';$foreign=$false;try{Select-InteractiveTarget|Out-Null}catch{$foreign=$_.Exception.Message -like 'INTERACTIVE_SESSION_NOT_FOUND*'};"
+                +"$b.owner='server\\user';$b.collectorProcess=$true;$excluded=$false;try{Select-InteractiveTarget|Out-Null}catch{$excluded=$_.Exception.Message -like 'INTERACTIVE_SESSION_NOT_FOUND*'};"
+                +"[pscustomobject]@{pid=$selectedPid;session=$selectedSession;ambiguous=$ambiguous;empty=$empty;missing=$missing;foreign=$foreign;excluded=$excluded}|ConvertTo-Json -Compress";
+            CommandResult execution=new PowerShell(new ProcessCommandExecutor()).run(script,10000);Assert.assertTrue(execution.error(),execution.success());
+            JsonObject result=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject();Assert.assertEquals(222,result.get("pid").getAsInt());Assert.assertEquals(2,result.get("session").getAsInt());
+            for(String field:Arrays.asList("ambiguous","empty","missing","foreign","excluded"))Assert.assertTrue(result.toString(),result.get(field).getAsBoolean());
         }finally{FileSupport.deleteTree(temp);}
     }
 
@@ -47,6 +83,12 @@ public class RemoteBeforeLogCopyIT {
                 Assert.assertTrue(identity.error(),identity.success());interactiveIdentity=JsonParser.parseString(identity.stdout.trim()).getAsJsonObject();
                 Assert.assertTrue("Test requires an interactive Windows session",interactiveIdentity.get("session").getAsInt()>0);
                 writeScript(job.resolve("process-scan.ps1"),"$p=Get-CimInstance Win32_Process -Filter 'ProcessId="+ProcessScanner.currentPid()+"';[pscustomobject]@{processes=@([pscustomobject]@{pid=$p.ProcessId;processName='java.exe';owner=[Security.Principal.WindowsIdentity]::GetCurrent().Name;sessionId=$p.SessionId;startTicks=$p.CreationDate.ToUniversalTime().Ticks.ToString();mainClass='org.eclipse.osgi.fixture';collectorProcess=$false});errors=@();elevated=$false}|ConvertTo-Json -Depth 5 -Compress");
+                // Select the real fixture identity for the BAT, while the
+                // intentionally missing JDK prevents attaching to the test JVM.
+                // Skip only the irrelevant failed-dump delays in this BAT fixture.
+                String worker=PowerShell.resource("remote-worker.ps1");
+                Assert.assertTrue(worker.contains("if($sample -gt 1){Start-Sleep -Seconds 5}"));
+                writeScript(job.resolve("remote-worker.ps1"),worker.replace("if($sample -gt 1){Start-Sleep -Seconds 5}","# BAT fixture: no delay between unavailable dump-tool attempts"));
             }
             writeScript(job.resolve("system-info.ps1"),"'{\"errors\":[]}'");
             Path log=Files.createDirectories(source.resolve("Log"));
@@ -66,7 +108,7 @@ public class RemoteBeforeLogCopyIT {
             try(RemoteConnection connection=new RemoteConnection("localhost","test\\user","C:/missing-fixture-jdk","unused-secret".toCharArray())){settings=new RemoteCollectionOrchestrator(c).settings(scenario.equals("list")?"list":"collect",null,connection);}
             settings.addProperty("jobId",job.getFileName().toString().substring("diagnostic-remote-".length()));DiagnosticReportGenerator.writeJson(job.resolve("request.json"),settings);
             if(scenario.equals("interactive")||taskScenario)settings.addProperty("nonInteractiveTransport",true);
-            if(taskScenario){settings.addProperty("interactiveUserSid",interactiveIdentity.get("sid").getAsString());settings.addProperty("interactiveUserName",interactiveIdentity.get("name").getAsString());settings.add("selectedPids",new JsonArray());}
+            if(taskScenario){settings.addProperty("interactiveUserSid",interactiveIdentity.get("sid").getAsString());settings.addProperty("interactiveUserName",interactiveIdentity.get("name").getAsString());JsonArray selected=new JsonArray();selected.add(ProcessScanner.currentPid());settings.add("selectedPids",selected);}
             DiagnosticReportGenerator.writeJson(job.resolve("request.json"),settings);
             if(scenario.equals("interactive-cancel")){
                 Process worker=new ProcessBuilder(Paths.get(System.getenv("SystemRoot"),"System32/WindowsPowerShell/v1.0/powershell.exe").toString(),"-NoLogo","-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",job.resolve("remote-worker.ps1").toString(),"-RequestFile",job.resolve("request.json").toString()).redirectOutput(source.resolve("worker.out").toFile()).redirectError(source.resolve("worker.err").toFile()).start();

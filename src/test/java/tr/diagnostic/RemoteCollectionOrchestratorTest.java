@@ -84,4 +84,29 @@ public class RemoteCollectionOrchestratorTest {
         }finally{Arrays.fill(password,'\0');}
     }
     private static byte[] readAll(InputStream input) throws IOException { ByteArrayOutputStream bytes = new ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n; while ((n=input.read(buffer))!=-1) bytes.write(buffer,0,n); return bytes.toByteArray(); }
+    @Test public void pingAndVxWorksAreIncludedInTheSameEncryptedReport() throws Exception {
+        CollectorConfiguration c=new CollectorConfiguration();c.outputDirectory=temp.getRoot().toPath();c.resourceMonitoringSeconds=0;
+        c.ping.enabled=true;c.ping.addresses.add("15.30.9.98");c.vxworks.enabled=true;c.vxworks.ports.add("COM7");
+        RemoteTransport fake=(settings,staging,connection,progress)->{
+            Assert.assertTrue(settings.getAsJsonObject("ping").get("enabled").getAsBoolean());Assert.assertEquals("COM7",settings.getAsJsonObject("vxworks").getAsJsonArray("ports").get(0).getAsString());
+            Assert.assertFalse(settings.toString().contains("session-secret"));
+            Path detail=staging.resolve("vxworks/ports/port-COM7/port-result.json");Files.createDirectories(detail.getParent());Files.write(detail,"{tasks:[{taskId:'0x42',infoAttempted:true,infoCollected:true,infoArtifact:'vxworks/ports/port-COM7/tasks/ti-0x42.txt'}],socketRows:[]}".getBytes(StandardCharsets.UTF_8));
+            Path info=detail.getParent().resolve("tasks/ti-0x42.txt");Files.createDirectories(info.getParent());Files.write(info,"task control block and registers".getBytes(StandardCharsets.UTF_8));
+            Files.write(detail.getParent().resolve("TatlYaz.txt"),"custom image output".getBytes(StandardCharsets.UTF_8));
+            Files.createDirectories(staging.resolve("ping"));Files.write(staging.resolve("ping/ping-15.30.9.98.txt"),"TimedOut".getBytes(StandardCharsets.UTF_8));
+            Files.write(staging.resolve("remote-system.json"),"{errors:[]}".getBytes(StandardCharsets.UTF_8));
+            return JsonParser.parseString("{result:{serverStartedAtUtc:'2026-10-14T00:00:00Z',discovery:{windowsDiscoverySucceeded:true},jvms:[],logs:[],errors:[],ping:{success:true,completed:true,results:[{address:'15.30.9.98',received:0,sent:4,status:'NO_ECHO_REPLY'}]},vxworks:{success:false,ports:[{port:'COM7',status:'PARTIAL',artifact:'vxworks/ports/port-COM7/port-result.json'}]},operations:[{type:'server-ping',success:true},{type:'vxworks-COM7',success:false}]}}").getAsJsonObject();
+        };
+        char[] password=ZipEncryptionService.generatePassword();
+        try(RemoteConnection connection=new RemoteConnection("server","server\\user","C:/Java/jdk8","session-secret".toCharArray())){
+            CollectionOrchestrator.Result result=new RemoteCollectionOrchestrator(c,fake).collect(null,password,connection,s->{});
+            Assert.assertEquals("PARTIAL",result.manifest.collectionStatus);Assert.assertTrue(result.manifest.ping.get("success").getAsBoolean());Assert.assertNotNull(result.manifest.vxworks);
+            try(ZipFile zip=new ZipFile(result.archive.toFile(),password)){
+                Assert.assertNotNull(zip.getFileHeader("ping/ping-15.30.9.98.txt"));Assert.assertNotNull(zip.getFileHeader("ping/SONUC.txt"));Assert.assertNotNull(zip.getFileHeader("vxworks/SONUC.txt"));Assert.assertNotNull(zip.getFileHeader("vxworks/task-listesi.csv"));
+                try(InputStream input=zip.getInputStream(zip.getFileHeader("vxworks/ports/port-COM7/tasks/ti-0x42.txt"))){Assert.assertEquals("task control block and registers",new String(readAll(input),StandardCharsets.UTF_8));}
+                try(InputStream input=zip.getInputStream(zip.getFileHeader("vxworks/ports/port-COM7/TatlYaz.txt"))){Assert.assertEquals("custom image output",new String(readAll(input),StandardCharsets.UTF_8));}
+                try(InputStream input=zip.getInputStream(zip.getFileHeader("Manifest.json"))){JsonObject manifest=JsonParser.parseReader(new InputStreamReader(input,StandardCharsets.UTF_8)).getAsJsonObject();Assert.assertTrue(manifest.has("ping"));Assert.assertTrue(manifest.has("vxworks"));}
+            }
+        }finally{Arrays.fill(password,'\0');}
+    }
 }

@@ -169,7 +169,7 @@ try {
     $request.settings|Add-Member -NotePropertyName interactiveUserSid -NotePropertyValue $owner[0].SID -Force
     $request.settings|Add-Member -NotePropertyName interactiveUserName -NotePropertyValue ($domain+'\'+$loginName) -Force
     foreach($resource in $request.resources.PSObject.Properties){
-        if($resource.Name -notin @('remote-worker.ps1','remote-batch.ps1','process-scan.ps1','system-info.ps1','resource-monitor.ps1')){throw 'Unknown helper resource'}
+        if($resource.Name -notin @('remote-worker.ps1','remote-batch.ps1','process-scan.ps1','system-info.ps1','resource-monitor.ps1','remote-extras.ps1','remote-ping.ps1','remote-vxworks.ps1')){throw 'Unknown helper resource'}
         $body=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resource.Value))
         [IO.File]::WriteAllText([IO.Path]::Combine($uncJobRoot,$resource.Name),$body,(New-Object Text.UTF8Encoding($true)))
     }

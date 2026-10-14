@@ -2,6 +2,8 @@
 
 Windows Java/OSGi donmalarını incelemek için hedef uygulamadan bağımsız JVM'de çalışan masaüstü/CLI aracı. Java 8, Maven, Swing, ProcessBuilder, NIO, SnakeYAML ve Zip4j kullanır. Web sunucusu, Spring, C# veya .NET bileşeni yoktur. Derlenmiş JAR çalışma sırasında internet bağlantısı istemez.
 
+Kısa kullanım açıklaması: [Hata Raporu Oluştur — Adım Adım](docs/hata-raporu-adimlari.md).
+
 ## Hızlı başlangıç
 
 **Tek dosyalık dağıtım:** Kullanıcıya yalnız `java-diagnostic-collector.jar` verin. Hazır `target/diagnostic-collector-single-jar.zip` yalnız bu JAR'ı içerir. Ayarlar ve PowerShell yardımcıları JAR'a gömülüdür; ayrı config, PS1 veya Maven gerekmez. Kullanıcı JAR'a çift tıklar veya `java -jar java-diagnostic-collector.jar` çalıştırır. Karşı bilgisayarda Java 8 ve Windows PowerShell bulunmalı; uzak JDK araçları sunucuda kullanılır. Çift tıklama Windows'un Java dosya ilişkilendirmesine bağlıdır, Java 8 seçimini tek başına garanti etmez.
@@ -86,6 +88,16 @@ CLI stdout/stderr UTF-8 kullanır. Eski Windows konsolunda Türkçe karakterler 
 
 ## Swing ve administrator çalıştırma
 
+**Hata Raporu Oluştur** uzak modda config'teki IP'lere sunucudan ping gönderir ve **sunucudaki kayıtlı COM portlarını otomatik bulup sırayla dener**. Port numaralarının elle girilmesi gerekmez. Gömülü config'te `remote.vxworks.autoDiscoverPorts: true`, `ports: []` bulunur; eski COM6–COM21 sınırı kaldırılmıştır. Seri ayarlar **115200, 8N1, flow control None** olur. VxWorks konsolu doğrulanan portta `i` listesindeki bütün TASKID'ler için `tt` ve `ti` denenir; socket/port, ağ, NFS ve bellek çıktıları aynı şifreli rapora eklenir. Yerel modda ve yalnız Java listelemede bu toplama çalışmaz. Manuel seçim gerekiyorsa kaynak config'te `autoDiscoverPorts: false` ve `ports: ['COM7', 'COM17']` kullanılıp JAR yeniden derlenir.
+
+ZIP içindeki `ping/SONUC.txt` IP erişim özetini; `vxworks/SONUC.txt`, `vxworks/task-listesi.csv` ve `vxworks/socket-port-listesi.csv` COM/cihaz IP/task/socket eşlemesini gösterir. VxWorks'te önce `ifconfig`, gerekirse `ifShow` ile IP/MAC bilgisi okunur; ardından `i`, her task için `tt 0xTASKID` ve `ti 0xTASKID`, sonra tekrar `i` alınır. `ti` task/stack/register ayrıntısını verir; sonucu trace'den ayrı kaydedilir ve özette alınan/denenen sayısı görünür. Ağ/bellek/NFS komutları bundan sonra çalışır. Her portun ham konsolu, komut çıktıları ve task izleri `vxworks/ports/port-COM*/` altındadır. Meşgul/sessiz port, alınamayan stack/task ayrıntısı ve desteklenmeyen socket bilgisi manifestte kaydedilir; mevcut Java/log verileriyle PARTIAL rapor hazırlanır. [Ayarlar ve sınırlamalar](docs/remote-mode.md#sunucudan-ping-ve-vxworks-toplama).
+
+Gömülü `remote.ping.subnet: '15.30.9.0/24'` ayarıyla `.1–.254` arasındaki **254 IP sunucudan** taranır. Aynı anda en fazla 16 hedef, IP başına 1 istek ve 1000 ms zaman aşımı kullanılır. Ağ/broadcast adreslerine ping gönderilmez. Ek IP'ler `addresses` listesine yazılabilir; tekrarlar çıkarılır. Bu ağ taraması 254 ayrı dosya üretmez: `ping/SONUC.txt` yanıt veren/vermeyen sayılarını ve IP sonuçlarını, `results.csv` tabloyu, `results.json` ayrıntıları içerir. Ping cihaz türünü veya VxWorks olduğunu doğrulamaz.
+
+VxWorks akışında IP/MAC sorgusundan sonra, ilk `i` listesinden önce **`TatlYaz`** bir kez gönderilir. Ham yanıt `vxworks/ports/port-COM*/TatlYaz.txt` dosyasına girer; alınma durumu ve varsa hata mevcut `vxworks/SONUC.txt` ve manifestte görünür. Simge desteklenmiyorsa görev/ağ toplamaya devam edilir; istem dönmezse kısmi çıktı korunur ve o porta yeni komut gönderilmez. Komut cihazın kendi uygulama imajında bulunmalıdır; adı ve harfleri aynen korunur, farklı komut denenmez.
+
+Konsol isteminden sonra ilk komut artık **`version`** olur; yanıtında VxWorks sürüm başlığı doğrulanmadan IP/TatlYaz/task komutları gönderilmez. Task anlık görüntüleri sonrasında **`checkStack 0`, `taskShow 0,2`, `devs`, `whoami`, `w`** ve ilk listede **PEND durumundaki her task için `tw 0xTASKID`** denenir. `memShow 0` mevcut ağ/bellek adımında tek kez çalışır. Ek yanıtlar portun `diagnostics/` klasöründe, `tw` yanıtları `tasks/tw-0x*.txt` içindedir; komut bazında sonuç mevcut `vxworks/SONUC.txt` dosyasına girer. `.` bağımsız bir tanılama komutu olarak eklenmez. Desteklenmeyen komut kaydedilir; timeout'ta o porta yeni komut gönderilmez. Ek sorgular mevcut süre ve çıktı sınırlarını kullanır.
+
 **Logları Temizle** düğmesi ekrandaki işlem günlüğünü ve Java süreçleri tablosunu temizler. Kaynak log dosyalarını veya raporları silmez; devam eden toplama işlemini etkilemez.
 
 Türkçe arayüzde **Hata Raporu Oluştur**, **Çıktı Klasörünü Aç** ve **Java Süreçlerini Listele** bulunur. Rapor düğmesi tüm keşfedilen JVM'leri toplar; belirli PID'ler için CLI kullanın. Keşif, toplama ve klasör açma `SwingWorker` içinde EDT dışında çalışır; tablo/günlük/dialog güncellemeleri EDT'dedir. İşlem sürerken pencereyi kapatma engellenir; tamamlandığında kapanabilir.
@@ -126,7 +138,7 @@ Fotoğraflardaki kaynakların karşılığı aşağıdadır. Kurulum kökü `C:/
 | Kurulum | gomulu/Kimliklendirme/iz | Kimliklendirme/iz |
 | Kurulum | gomulu/Kimliklendirme/config | Kimliklendirme/config |
 | Kurulum | gomulu/Gomulu_Ortak/data | Gomulu_Ortak |
-| Uygulama | plugins/denizEDRA/conf/EDRA_configuration.xml | KA/denizEDRA/conf |
+| Uygulama | plugins/denizEDKA/conf/EDKA_conf.xml | KA/denizEDKA/conf |
 | Uygulama | plugins/RadehModel/conf | KA/RadehModel/conf |
 | Uygulama | plugins/yayinKaydi/kayitlar | KA/yayinKaydi |
 | Kurulum | gomulu/Alkon/log/Kayit | Alkon/log |

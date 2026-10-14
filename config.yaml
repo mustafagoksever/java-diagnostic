@@ -36,6 +36,46 @@ remote:
   beforeLogCopyBatch: 'Log/kaydal.bat'
   beforeLogCopyTimeoutSeconds: 120           # BAT limiti, 1–600 saniye.
   beforeLogCopyDelaySeconds: 30              # BAT başarıyla bittikten sonra bekle, 0–300 s.
+  # Ping SUNUCUDAN gönderilir; yerel bilgisayardan hedeflere gönderilmez.
+  # enabled: false kapatır. Yanıt alınamaması bir tanılama bulgusudur,
+  # tek başına collector hatası veya cihazın kapalı olduğunun kanıtı değildir.
+  ping:
+    enabled: true
+    subnet: '15.30.9.0/24'                   # .1–.254 taranır; .0 ağ ve .255 broadcast hariç. /24–/30 desteklenir.
+    addresses: []                           # İsteğe bağlı ek IPv4'ler; örnek: ['15.30.10.20']. Aynı IP bir kez taranır.
+    # Yalnız liste için subnet satırını kaldırın: addresses: ['15.30.9.176', '15.30.9.198'].
+    # subnet + addresses toplam en fazla 512 farklı hedef. DNS adı kabul edilmez.
+    parallelism: 16                          # Aynı anda en fazla 1–32 IP; tarama SUNUCUDA çalışır.
+    attempts: 1                            # Her IP'ye istek sayısı, 1–10. 1 hızlı keşif; 4 paket kaybı takibi.
+    timeoutMillis: 1000                     # Tek ICMP isteği limiti, 100–5000 ms.
+    intervalMillis: 0                       # Aynı IP'deki istekler arası, 0–1000 ms; attempts: 1 ise beklemez.
+    # Ağ taramasında 254 ayrı dosya yerine ping/SONUC.txt, results.csv ve results.json yazılır.
+  # VxWorks SUNUCUDAKİ seri portlardan okunur. Yerel modda/listelemede çalışmaz.
+  # enabled: false kapatır. Port meşgulse devralınmaz. DTR ve RTS kapalıdır.
+  # İstemden sonra version okunur; VxWorks sürüm başlığı yoksa başka komut gönderilmez.
+  # i listesindeki her TASKID için tt 0xTASKID ve ti 0xTASKID denenir.
+  # IP/MAC sorgusundan sonra, i listesinden önce TatlYaz bir kez gönderilir.
+  # Çıktı: vxworks/ports/port-COM*/TatlYaz.txt; desteklenmezse hata kaydedilip devam edilir.
+  # tt=stack trace; ti=task/stack/register ayrıntısı. Kernel korumaları aşılmaz.
+  # Native trace/soket desteği yoksa neden kaydedilir ve rapor PARTIAL olabilir.
+  # Ek sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'larda tw 0xTASKID.
+  # memShow 0 mevcut ağ/bellek adımındadır; aynı portta iki kez çalıştırılmaz.
+  # checkStack stack belleğini tarar; ek komutlar port/genel süre limitini uzatmaz.
+  # '.', görev durdurma/silme ve sayaç sıfırlama komutları gönderilmez.
+  vxworks:
+    enabled: true
+    autoDiscoverPorts: true                 # Sunucuda kayıtlı tüm COM portlarını otomatik bul ve sırayla dene.
+    ports: []                               # Otomatik keşifte kullanılmaz. Manuel örnek: autoDiscoverPorts: false, ports: ['COM7', 'COM17'].
+    # Manuel listede en fazla 64 port; port adları COM1–COM65535 aralığındadır.
+    # Otomatik keşif yalnız sunucuda çalışır; bu bilgisayarın portlarına bağlanmaz.
+    baudRate: 115200                        # Seri hız, 110–921600; sürücü desteklemeli.
+    dataBits: 8                             # Veri bitleri, 5–8.
+    stopBits: 1                             # Stop bitleri, 1 veya 2.
+    parity: None                            # None/Odd/Even/Mark/Space.
+    flowControl: None                       # Bu sürümde yalnız None desteklenir.
+    portTimeoutSeconds: 180                 # Bir portun tüm işlemleri, 15–600 s.
+    commandTimeoutSeconds: 10               # Tek komut/istem, 1–60 s; port limitinden kısa.
+    maxOutputMb: 8                          # Bir portun konsol çıktı sınırı, 1–64 MiB.
 
 # installationDirectory: kurulum kökü; gomulu bu kökün altındadır.
 # Göreli yol bu YAML'ın klasörüne göredir. Örnek: 'D:/AresKurulum'.
@@ -122,7 +162,7 @@ logs:
   # Ortak gömülü veriler: son 48 saat.
   - {base: installation, path: 'gomulu/Gomulu_Ortak/data', destination: 'Gomulu_Ortak', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
   # Tek XML dosyası örneği: eski tarihli ayarlar da alınır.
-  - {base: application, path: 'plugins/denizEDRA/conf/EDRA_configuration.xml', destination: 'KA/denizEDRA/conf', extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
+  - {base: application, path: 'plugins/denizEDKA/conf/EDKA_conf.xml', destination: 'KA/denizEDKA/conf', extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
   # RadehModel ayarları: tarih filtresi kapalı.
   - {base: application, path: 'plugins/RadehModel/conf', destination: 'KA/RadehModel/conf', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
   # Yayın kayıtları: 100 MiB üzeri dosyalar atlanır.
@@ -137,7 +177,6 @@ logs:
   - {base: installation, path: 'gomulu/AlkonAB/log', destination: 'AlkonAB/log', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
   # SISKI ayarları: tarih filtresi kapalı.
   - {base: installation, path: 'gomulu/SISKI/config', destination: 'SISKI/config', recursive: true, extensions: [], modifiedWithinHours: 0, maxFileSizeMb: 100}
-  # Taktik kayıtlar: fotoğraftaki hedef AlkonAB/kayit olarak korunur.
   - {base: installation, path: 'gomulu/TaktikKayitYKBKurulum/data/kayit', destination: 'AlkonAB/kayit', recursive: true, extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}
   # Tek debug metni: KA/log içine kopyalanır.
   - {base: application, path: 'plugins/OrtakKutuphane/conf/denized_debug.txt', destination: 'KA/log', extensions: [], modifiedWithinHours: 48, maxFileSizeMb: 100}

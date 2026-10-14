@@ -14,6 +14,8 @@ public final class CollectorConfiguration {
     public String remoteBeforeLogCopyBatch = "";
     public int remoteBeforeLogCopyTimeoutSeconds = 120;
     public int remoteBeforeLogCopyDelaySeconds = 30;
+    public PingSettings ping = new PingSettings();
+    public VxWorksSettings vxworks = new VxWorksSettings();
     public String installationPath = "C:/aselsan/ares2n";
     public String applicationPath = "auto";
     public Path outputDirectory;
@@ -28,6 +30,29 @@ public final class CollectorConfiguration {
     public List<String> additionalProcessNames = new ArrayList<>();
     public boolean collectGcStats = true;
     public List<LogDirectory> logs = new ArrayList<>();
+
+    public static final class PingSettings {
+        public boolean enabled;
+        public String subnet = "";
+        public List<String> addresses = new ArrayList<>();
+        public int parallelism = 16;
+        public int attempts = 4;
+        public int timeoutMillis = 1000;
+        public int intervalMillis = 250;
+    }
+    public static final class VxWorksSettings {
+        public boolean enabled;
+        public boolean autoDiscoverPorts;
+        public List<String> ports = new ArrayList<>();
+        public int baudRate = 115200;
+        public int dataBits = 8;
+        public int stopBits = 1;
+        public String parity = "None";
+        public String flowControl = "None";
+        public int portTimeoutSeconds = 180;
+        public int commandTimeoutSeconds = 10;
+        public int maxOutputMb = 8;
+    }
 
     public static final class LogDirectory {
         public String sourcePath;

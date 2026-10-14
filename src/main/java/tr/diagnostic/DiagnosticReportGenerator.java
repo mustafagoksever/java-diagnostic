@@ -19,6 +19,8 @@ public final class DiagnosticReportGenerator {
         public String mode = "local";
         public String targetHost;
         public String transport;
+        public com.google.gson.JsonObject ping;
+        public com.google.gson.JsonObject vxworks;
         public ProcessScanner.ScanResult discovery;
         public List<JvmReport> jvms = new ArrayList<>();
         public List<ExcludedJvm> excludedJvms = new ArrayList<>();
