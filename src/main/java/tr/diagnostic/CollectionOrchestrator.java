@@ -23,6 +23,9 @@ public final class CollectionOrchestrator {
     public CollectionOrchestrator(CollectorConfiguration config, CommandExecutor executor) { this.config = config; this.executor = executor; }
     public ProcessScanner.ScanResult list() throws IOException, InterruptedException { return new ProcessScanner(config, executor).scan(); }
     public Result collect(Set<Long> selectedPids, char[] password, Consumer<String> progress) throws IOException, InterruptedException {
+        return CollectionTiming.run(progress, () -> collectReport(selectedPids, password, progress));
+    }
+    private Result collectReport(Set<Long> selectedPids, char[] password, Consumer<String> progress) throws IOException, InterruptedException {
         if (!PowerShell.isWindows()) throw new IOException("Collector Windows üzerinde çalışmalıdır.");
         if (password == null || password.length < 12) throw new IOException("ZIP parolası en az 12 karakter olmalı.");
         Files.createDirectories(config.outputDirectory);

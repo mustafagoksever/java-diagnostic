@@ -53,6 +53,9 @@ public final class RemoteCollectionOrchestrator {
         } finally { FileSupport.deleteTree(temp); }
     }
     public CollectionOrchestrator.Result collect(Set<Long> selected, char[] password, RemoteConnection connection, Consumer<String> progress) throws IOException, InterruptedException {
+        return CollectionTiming.run(progress, () -> collectReport(selected, password, connection, progress));
+    }
+    private CollectionOrchestrator.Result collectReport(Set<Long> selected, char[] password, RemoteConnection connection, Consumer<String> progress) throws IOException, InterruptedException {
         if (password == null || password.length < 12) throw new IOException("ZIP parolası en az 12 karakter olmalı.");
         Files.createDirectories(config.outputDirectory);
         Path staging = Files.createTempDirectory(config.outputDirectory, ".diagnostic-staging-");

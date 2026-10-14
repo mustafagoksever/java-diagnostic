@@ -66,7 +66,7 @@ function Stop-Helper($helper,$started) {
 function Run-Script($body,$setup,$label,$timeoutSeconds) {
     Deadline
     $helper=$null;$started=$false;$output=$null;$errorOutput=$null
-    $folder=Join-Path $dataRoot 'queries';[void][IO.Directory]::CreateDirectory($folder)
+    $folder=Join-Path $dataRoot 'debug\queries';[void][IO.Directory]::CreateDirectory($folder)
     $name=(Safe-Name $label)+'-'+[Guid]::NewGuid()
     $outPath=Join-Path $folder ($name+'.json');$errPath=Join-Path $folder ($name+'.stderr.txt')
     try {
@@ -173,7 +173,7 @@ function Scan-Java {
     $setup='$additionalNames=@(ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('''+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($namesJson))+'''))));'
     $scan=Run-Script ([IO.File]::ReadAllText((Join-Path $jobRoot 'process-scan.ps1'),[Text.Encoding]::UTF8)) $setup 'discovery' $settings.scanTimeoutSeconds
     $scan|Add-Member -NotePropertyName windowsDiscoverySucceeded -NotePropertyValue $true
-    $jps=Run-Tool $null 'jps' @('-l') 'jps' 0 (Join-Path $dataRoot 'discovery')
+    $jps=Run-Tool $null 'jps' @('-l') 'jps' 0 (Join-Path $dataRoot 'debug\discovery')
     if($jps.success) {
         foreach($line in ((Read-Head (Join-Path $dataRoot $jps.artifact)) -split '\r?\n')) {
             if($line -notmatch '^(\d+)\s+(.+)$'){continue}; $foundPid=[long]$matches[1]; $main=$matches[2].Trim()

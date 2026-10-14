@@ -20,8 +20,12 @@ function New-FakeSerial {
             $this.Buffer="version`r`nVxWorks (fixture) version 6.9.4.6`r`nvalue = 0`r`n-> ";return
         }
         if($cmd -eq 'whoami' -and $global:fixtureTiMode -eq 'diagnostic-silent'){$this.Buffer="whoami`r`npartial username";return}
-        if($cmd -in @('checkStack 0','taskShow 0,2','devs','whoami','w') -or $cmd -match '^tw 0x[0-9a-f]+$'){
+        if($cmd -eq 'time' -and $global:fixtureTiMode -eq 'time-silent'){$this.Buffer="time`r`npartial time output";return}
+        if($cmd -eq 'time' -and $global:fixtureTiMode -eq 'time-unsupported'){$this.Buffer="time`r`nC interp: unknown symbol name 'time'.`r`n-> ";return}
+        if($cmd -in @('time','moduleShow','checkStack 0','taskShow 0,2','devs','whoami','w') -or $cmd -match '^tw 0x[0-9a-f]+$'){
             if($global:fixtureTiMode -eq 'diagnostic-unsupported'){$this.Buffer=$cmd+"`r`nC interp: unknown symbol name.`r`n-> ";return}
+            if($cmd -eq 'time'){$this.Buffer="time`r`nvalue = 1791988800 = 0x6acf9440`r`n-> ";return}
+            if($cmd -eq 'moduleShow'){$this.Buffer="moduleShow`r`nMODULE NAME     MODULE ID  GROUP #  TEXT START  DATA START  BSS START`r`nfixtureApp.out  0x123400   2        0x100000    0x200000    0x300000`r`nvalue = 0`r`n-> ";return}
             $this.Buffer=$cmd+"`r`nFIXTURE_DIAGNOSTIC_OUTPUT`r`nvalue = 0`r`n-> ";return
         }
         if(!$cmd){

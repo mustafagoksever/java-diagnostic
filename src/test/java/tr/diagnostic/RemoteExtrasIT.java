@@ -39,6 +39,9 @@ public class RemoteExtrasIT {
     @Test public void unknownSymbolMentioningVxWorksDoesNotPassVersionConfirmation() throws Exception {serial(false,false,false,"version-unsupported");}
     @Test public void responseLimitPreservesBoundedPartialOutputEvenWhenTheFirstReadIsOversized() throws Exception {serial(false,false,false,"tatl-oversize");}
 
+    @Test public void unsupportedTimeStillCollectsModulesAndNetwork() throws Exception {serial(false,false,false,"time-unsupported");}
+    @Test public void timeTimeoutPreservesPartialLogAndDoesNotSendModuleShow() throws Exception {serial(false,false,false,"time-silent");}
+
     private void serial(boolean wide,boolean silent) throws Exception {
         serial(wide,silent,false);
     }
@@ -125,9 +128,16 @@ public class RemoteExtrasIT {
                 Assert.assertTrue(new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-COM7/diagnostics/whoami.txt")),StandardCharsets.UTF_8).contains("partial username"));
                 JsonArray diagnostics=result.getAsJsonArray("diagnostics");Assert.assertTrue(diagnostics.get(diagnostics.size()-1).getAsJsonObject().get("error").getAsString().contains("SERIAL_RESPONSE_TIMEOUT"));return;
             }
+            if(tiMode.equals("time-silent")){
+                Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertTrue(result.get("timedOut").getAsBoolean());
+                JsonArray ops=result.getAsJsonArray("commands");Assert.assertEquals("time",ops.get(ops.size()-1).getAsJsonObject().get("command").getAsString());
+                Assert.assertTrue(new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-COM7/diagnostics/time.txt")),StandardCharsets.UTF_8).contains("partial time output"));
+                Assert.assertFalse(Files.exists(job.resolve("data/vxworks/ports/port-COM7/diagnostics/moduleShow.txt")));
+                return;
+            }
             Assert.assertTrue(result.toString(),result.get("completed").getAsBoolean());Assert.assertFalse(result.get("success").getAsBoolean());
             Assert.assertEquals(3,result.get("initialTaskCount").getAsInt());Assert.assertEquals(3,result.get("attemptedTaskCount").getAsInt());Assert.assertEquals(1,result.get("tracesWithFrames").getAsInt());
-            boolean validInfo=Arrays.asList("normal","minus-one","unsigned-ones","auto-port","tatl-unsupported","diagnostic-unsupported").contains(tiMode);
+            boolean validInfo=Arrays.asList("normal","minus-one","unsigned-ones","auto-port","tatl-unsupported","diagnostic-unsupported","time-unsupported").contains(tiMode);
             Assert.assertEquals(3,result.get("attemptedTaskInfoCount").getAsInt());Assert.assertEquals(validInfo?2:0,result.get("taskInfosCollected").getAsInt());
             String prefix=wide?"0xffff8000000000":"0x";
             Assert.assertEquals(prefix+"42",result.getAsJsonArray("tasks").get(0).getAsJsonObject().get("taskId").getAsString());
@@ -158,13 +168,24 @@ public class RemoteExtrasIT {
             Assert.assertEquals("tt "+prefix+"44",commands.get(firstList+5));
             Assert.assertEquals("ti "+prefix+"44",commands.get(firstList+6));
             Assert.assertEquals("i",commands.get(firstList+7));
-            Assert.assertEquals(Arrays.asList("checkStack 0","taskShow 0,2","devs","whoami","w","tw "+prefix+"42","tw "+prefix+"44","inetstatShow"),commands.subList(firstList+8,firstList+16));
+            Assert.assertEquals(Arrays.asList("time","moduleShow","checkStack 0","taskShow 0,2","devs","whoami","w","tw "+prefix+"42","tw "+prefix+"44","inetstatShow"),commands.subList(firstList+8,firstList+18));
             Assert.assertFalse(commands.contains("."));Assert.assertFalse(commands.contains("tw "+prefix+"43"));Assert.assertEquals(1,Collections.frequency(commands,"memShow 0"));
-            JsonArray diagnostics=result.getAsJsonArray("diagnostics");Assert.assertEquals(8,diagnostics.size());
+            JsonArray diagnostics=result.getAsJsonArray("diagnostics");Assert.assertEquals(10,diagnostics.size());
             for(int n=0;n<diagnostics.size();n++){
-                JsonObject op=diagnostics.get(n).getAsJsonObject();Assert.assertEquals(n==0||!tiMode.equals("diagnostic-unsupported"),op.get("collected").getAsBoolean());
+                JsonObject op=diagnostics.get(n).getAsJsonObject();Assert.assertEquals(n==0||(!tiMode.equals("diagnostic-unsupported")&&!(tiMode.equals("time-unsupported")&&op.get("command").getAsString().equals("time"))),op.get("collected").getAsBoolean());
                 Assert.assertTrue(Files.isRegularFile(job.resolve("data").resolve(op.get("artifact").getAsString())));
             }
+            String timeText=new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-"+port+"/diagnostics/time.txt")),StandardCharsets.UTF_8);
+            String moduleText=new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-"+port+"/diagnostics/moduleShow.txt")),StandardCharsets.UTF_8);
+            if(!tiMode.equals("diagnostic-unsupported")){
+                Assert.assertTrue(timeText,timeText.contains(tiMode.equals("time-unsupported")?"unknown symbol name 'time'":"value = 1791988800"));
+                Assert.assertTrue(moduleText,moduleText.contains("fixtureApp.out"));
+            }
+            DiagnosticReportGenerator.Manifest diagnosticManifest=new DiagnosticReportGenerator.Manifest();
+            diagnosticManifest.vxworks=JsonParser.parseString("{ports:[{port:'"+port+"',artifact:'vxworks/ports/port-"+port+"/port-result.json'}]}").getAsJsonObject();
+            new RemoteDiagnosticsReportWriter().write(diagnosticManifest,job.resolve("data"));
+            String summary=new String(Files.readAllBytes(job.resolve("data/vxworks/SONUC.txt")),StandardCharsets.UTF_8);
+            Assert.assertTrue(summary,summary.contains("time: "));Assert.assertTrue(summary,summary.contains("moduleShow: "));
             for(JsonElement item:result.getAsJsonArray("tasks")){
                 JsonObject task=item.getAsJsonObject();Assert.assertTrue(task.get("infoAttempted").getAsBoolean());
                 String infoPath=task.get("infoArtifact").getAsString();Assert.assertTrue(infoPath.endsWith("ti-"+task.get("taskId").getAsString()+".txt"));

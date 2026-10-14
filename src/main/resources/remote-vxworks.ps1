@@ -214,7 +214,7 @@ try{
     $probe.removedTaskIds=@($beforeIds|Where-Object{$_ -notin $probe.afterTaskIds})
     # Read-only summaries after the trace snapshots. checkStack scans stack
     # memory and may take time; existing port/command/output limits still apply.
-    foreach($command in @('checkStack 0','taskShow 0,2','devs','whoami','w')){
+    foreach($command in @('time','moduleShow','checkStack 0','taskShow 0,2','devs','whoami','w')){
         Progress ($portName+': ek tanilama, '+$command)
         $label=$command -replace '[^A-Za-z0-9_-]','_'
         [void](Collect-Diagnostic $command ('diagnostics\'+$label+'.txt'))

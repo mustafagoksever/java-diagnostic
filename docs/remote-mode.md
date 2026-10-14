@@ -92,7 +92,7 @@ Ardından `i` çıktısının bütün sayfaları okunur; **araya ağ tanılama k
 
 Task trace'lerinden sonra ağ/bellek komutları `inetstatShow`, `tcpstatShow 0`, `udpstatShow 0`, `ipstatShow 0`, `routeShow`, `nfsDevShow`, `memShow 0` olur. Socket tablosu ayrıştırılamazsa `lkup "netstat"` ve `netstat "-a -n"`, seçenek hatasında `netstat "-a"` denenir. İstatistik sayaçlarını temizlemek için kullanılan seçenekler seçilmez. Komut/simge bulunamazsa ham yanıt saklanır; boş çıktı **portlar kapalı** şeklinde yorumlanmaz. TCP LISTEN, cihazda yerel dinleme durumudur; dışarıdan erişim testi değildir.
 
-İkinci `i` görüntüsünden sonra ve ağ/bellek adımından önce ek salt okunur komutlar çalıştırılır: `checkStack 0` bütün task'ların stack kullanımını, `taskShow 0,2` bütün task'ların TCB özetini, `devs` I/O aygıtlarını, `whoami` kullanıcı bilgisini, `w` bekleme özetini gösterir. İlk `i` listesinde PEND/PEND+T/PEND+S gibi bekleme durumundaki her task için açık kimlikle `tw 0xTASKID` gönderilir; beklediği nesnenin ayrıntısı istenir. READY task'a `tw` gönderilmez. Task arada kapanabilir veya durumu değişebilir; çıktılar farklı anlardaki görüntülerdir. `checkStack` stack belleği taradığı için ek yük ve süre yaratabilir; eksiksiz taşma garantisi vermez. `memShow 0` mevcut akışta bulunduğu için tekrar eklenmez. `.` tanılama komutu olarak gönderilmez.
+İkinci `i` görüntüsünden sonra ve ağ/bellek adımından önce ek salt okunur komutlar çalıştırılır: önce argümansız `time` ve `moduleShow`, ardından `checkStack 0` bütün task'ların stack kullanımını, `taskShow 0,2` bütün task'ların TCB özetini, `devs` I/O aygıtlarını, `whoami` kullanıcı bilgisini, `w` bekleme özetini gösterir. `time` ham yanıtı `diagnostics/time.txt`, `moduleShow` ham yanıtı `diagnostics/moduleShow.txt` içine girer; zaman yanıtının biçimi değiştirilmez. İlk `i` listesinde PEND/PEND+T/PEND+S gibi bekleme durumundaki her task için açık kimlikle `tw 0xTASKID` gönderilir; beklediği nesnenin ayrıntısı istenir. READY task'a `tw` gönderilmez. Task arada kapanabilir veya durumu değişebilir; çıktılar farklı anlardaki görüntülerdir. `checkStack` stack belleği taradığı için ek yük ve süre yaratabilir; eksiksiz taşma garantisi vermez. `memShow 0` mevcut akışta bulunduğu için tekrar eklenmez. `.` tanılama komutu olarak gönderilmez.
 
 Ek komut yanıtları `diagnostics/<komut>.txt`, task bekleme ayrıntıları `tasks/tw-0xTASKID.txt` altındadır. Port sonucunda `diagnostics` dizisi her komutun yolunu/yanıt durumunu/hatasını saklar; manifestin port özetinde `versionConfirmed`, `diagnosticAttemptedCount`, `diagnosticCollectedCount` bulunur. Mevcut `vxworks/SONUC.txt` komut bazında sonucu ve ham dosyayı gösterir. YANIT ALINDI, isteme dönmüş yanıtın saklandığını belirtir; uygulama içi başarı anlamı çıkarılmaz. Desteklenmeyen komutlar kısmi sonuç olur, sonraki komuta devam edilir; timeout, iptal veya çıktı sınırında o portta yeni komut gönderilmez. Port/genel süre limitleri otomatik artırılmaz. [Wind River usrLib başvurusu](https://daq00.triumf.ca/~daqweb/doc/vxworks/tornado2/docs/vxworks/ref/usrLib.html), [taskShow başvurusu](https://www.ee.torontomu.ca/~courses/ee8205/Data-Sheets/Tornado-VxWorks/vxworks/ref/taskShow.html), [Wind River CLI kılavuzu — w/tw](https://jno.su/docs/vxworks-cli-tools-users-guide-62.pdf).
 
@@ -135,6 +135,18 @@ Görev yalnız geçici `remote-batch.ps1` yardımcısını gizli konsolla başla
 BAT'ın pencere odağı, kilitli/bağlantısı kopmuş masaüstü veya NirCmd'nin uygulama içi dışa aktarma başarısı yalnız exit code ile doğrulanamaz. Kopyalama öncesi 30 saniyelik süre kullanıcının istediği hazırlık payıdır; dışa aktarmanın gerçekten bittiğine dair uygulamadan bağımsız bir tamamlanma protokolü değildir. Mevcut BAT değiştirilmez, yeni tuş kombinasyonu eklenmez. Bu tanıma bütün UI otomasyon dillerini çözümleyen bir BAT yorumlayıcısı değildir.
 
 Operatör kaynak config'te `beforeLogCopyBatch: ''` ile kapatabilir; timeout aralığı 1–600 saniye, BAT sonrası bekleme 0–300 saniyedir. Toplam toplama deadline'ı daha kısaysa o uygulanır. Mutlak/UNC yol, üst klasöre çıkış ve shell metakarakterleri kabul edilmez. Değişiklik kullanıcıya verilen JAR'a yeniden gömülmelidir; ayrı config dağıtımı gerekmez.
+
+## Raporun debug klasörü
+
+Uzak toplamanın yardımcı çıktıları rapor kökündeki `debug/` altında tutulur:
+
+```text
+debug/
+  discovery/  # jps süreç keşfinin stdout/stderr kayıtları
+  queries/    # sunucu sorgularının JSON/stderr kayıtları
+```
+
+`queries` süreç keşfi, sistem bilgileri, dump öncesi PID başlangıç kimliği kontrolleri, ping ve COM yardımcı sonuçlarını içerir. Aynı PID için birden fazla kimlik sorgusu normaldir. Kayıtlar manifestin dosya envanterine ve AES-256 ZIP'e bu yollarla eklenir. JVM dump'ları `jvms/`, uygulama logları `logs/`, ping ve VxWorks raporları kendi klasörlerinde kalır. Eski raporlarda bu iki yardımcı klasör kökte bulunabilir.
 
 ## Hatalar ve temizlik
 
