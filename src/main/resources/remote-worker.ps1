@@ -250,6 +250,30 @@ function Scan-Java {
     }
     return $scan
 }
+function Resolve-CollectionPaths {
+    $install=$null;$app=$null
+    if(![string]::IsNullOrWhiteSpace([string]$settings.installationDirectory)){
+        if($settings.installationDirectory -notmatch '^[A-Za-z]:[/\\]'){throw 'REMOTE_ROOT_REQUIRED: installationDirectory must be an absolute server drive path'}
+        $install=[IO.Path]::GetFullPath($settings.installationDirectory)
+    }
+    if($settings.applicationDirectory -eq 'auto'){
+        if($install){
+            $sub=Join-Path $install 'uygulama'
+            $app=if(Test-Path -LiteralPath $sub -PathType Container){$sub}elseif((Test-Path -LiteralPath (Join-Path $install 'plugins') -PathType Container) -or (Test-Path -LiteralPath (Join-Path $install 'Log') -PathType Container)){$install}else{$sub}
+        }
+    }elseif($settings.applicationDirectory -match '^[A-Za-z]:[/\\]'){$app=[IO.Path]::GetFullPath($settings.applicationDirectory)}
+    elseif([IO.Path]::IsPathRooted([string]$settings.applicationDirectory)){throw 'REMOTE_ROOT_REQUIRED: ambiguous applicationDirectory'}
+    elseif($install){$app=[IO.Path]::GetFullPath((Join-Path $install $settings.applicationDirectory))}
+    if(![string]::IsNullOrWhiteSpace([string]$settings.beforeLogCopyBatch) -and !$app){throw 'REMOTE_ROOT_REQUIRED: log preparation BAT needs an explicit server application root'}
+    foreach($spec in @($settings.logs)){
+        if([string]::IsNullOrWhiteSpace([string]$spec.path)){throw 'REMOTE_ROOT_REQUIRED: log path is empty'}
+        if($spec.path -match '^[A-Za-z]:[/\\]'){continue}
+        if([IO.Path]::IsPathRooted([string]$spec.path)){throw 'REMOTE_ROOT_REQUIRED: ambiguous log path'}
+        $base=if($spec.base -eq 'application'){$app}else{$install}
+        if(!$base){throw 'REMOTE_ROOT_REQUIRED: relative log path needs an explicit server root'}
+    }
+    return [pscustomobject]@{installationDirectory=$install;applicationDirectory=$app}
+}
 function Resolve-Source($spec,$install,$app) {
     $base=if($spec.base -eq 'application'){$app}else{$install}
     $path=if([IO.Path]::IsPathRooted($spec.path)){$spec.path}else{Join-Path $base $spec.path}
@@ -332,7 +356,7 @@ function Run-InteractiveBatch($batch,$op) {
         # password is registered; an existing interactive token is required.
         $registered=$folder.RegisterTaskDefinition($taskName,$definition,2,[string]$settings.interactiveUserSid,$null,3,$null)
         $taskCreated=$true
-        Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='before-log-copy';message=('Sunucudaki kaydal.bat kullanici oturumunda cagriliyor; session '+$target.sessionId+'...')}
+        Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='before-log-copy';message=('Sunucudaki '+$settings.beforeLogCopyBatch+' kullanici oturumunda cagriliyor; session '+$target.sessionId+'...')}
         [void]$registered.RunEx($null,4,[int]$target.sessionId,$null)
         $watch=[Diagnostics.Stopwatch]::StartNew()
         while(!(Test-Path -LiteralPath $marker)){
@@ -344,9 +368,9 @@ function Run-InteractiveBatch($batch,$op) {
         $finished=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
         if($finished.jobId -ne $settings.jobId -or $finished.sessionId -ne $target.sessionId -or $finished.userSid -ne $settings.interactiveUserSid){throw 'INTERACTIVE_RESULT_IDENTITY_MISMATCH'}
         $op.exitCode=$finished.exitCode;$op.timedOut=[bool]$finished.timedOut
-        foreach($name in @('kaydal.stdout.txt','kaydal.stderr.txt')){
+        foreach($name in @('batch.stdout.txt','batch.stderr.txt')){
             $path=Join-Path $dataRoot ('pre-log\'+$name)
-            if(Test-Path -LiteralPath $path){if($name -eq 'kaydal.stdout.txt'){$op.artifact=Relative $path}else{$op.stderrArtifact=Relative $path}}
+            if(Test-Path -LiteralPath $path){if($name -eq 'batch.stdout.txt'){$op.artifact=Relative $path}else{$op.stderrArtifact=Relative $path}}
         }
         if(!$finished.success){
             $detail=if($op.stderrArtifact){Read-Head (Join-Path $dataRoot $op.stderrArtifact) 4096}else{''}
@@ -376,7 +400,7 @@ function Wait-AfterBatch($op) {
     $op.batchCompletedAt=[DateTime]::UtcNow.ToString('o')
     if($delay -gt 0){
         Activity ('[Log hazirligi] BAT tamamlandi; log kopyalamadan once '+$delay+' saniye bekleniyor.')
-        Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='before-log-copy-wait';message=('kaydal.bat bitti; log kopyalamadan once '+$delay+' saniye bekleniyor...')}
+        Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='before-log-copy-wait';message=('BAT bitti; log kopyalamadan once '+$delay+' saniye bekleniyor...')}
         $wait=[Diagnostics.Stopwatch]::StartNew()
         while($wait.Elapsed.TotalSeconds -lt $delay){Deadline;Start-Sleep -Milliseconds ([int][Math]::Min(500,[Math]::Max(1,$delay*1000-$wait.ElapsedMilliseconds)))}
         Deadline
@@ -404,7 +428,7 @@ function Run-BeforeLogCopy($app) {
             Wait-AfterBatch $op;$op.success=$true;return $op
         }
         $folder=Join-Path $dataRoot 'pre-log';[void][IO.Directory]::CreateDirectory($folder)
-        $outPath=Join-Path $folder 'kaydal.stdout.txt';$errPath=Join-Path $folder 'kaydal.stderr.txt'
+        $outPath=Join-Path $folder 'batch.stdout.txt';$errPath=Join-Path $folder 'batch.stderr.txt'
         $op.artifact=Relative $outPath;$op.stderrArtifact=Relative $errPath
         $output=[IO.File]::Open($outPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
         $errorOutput=[IO.File]::Open($errPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
@@ -413,7 +437,7 @@ function Run-BeforeLogCopy($app) {
         # relative basename; WorkingDirectory is passed through ProcessStartInfo.
         $start.Arguments='/d /s /c "'+$call+'"'
         $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
-        Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='before-log-copy';message='Sunucuda Log/kaydal.bat calistiriliyor; log kopyalama bekliyor...'}
+        Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='before-log-copy';message=('Sunucuda '+$relative+' calistiriliyor; log kopyalama bekliyor...')}
         $helper=New-Object Diagnostics.Process;$helper.StartInfo=$start;$started=$helper.Start();$helper.StandardInput.Close()
         $copy=$helper.StandardOutput.BaseStream.CopyToAsync($output);$copyError=$helper.StandardError.BaseStream.CopyToAsync($errorOutput)
         $budget=[int][Math]::Max(1,[Math]::Min($settings.beforeLogCopyTimeoutSeconds*1000,($settings.timeoutSeconds-$clock.Elapsed.TotalSeconds)*1000))
@@ -464,6 +488,7 @@ function Copy-Log($source,$target,$spec,$cutoff) {
     return $log
 }
 try {
+    $collectionPaths=if($settings.action -eq 'collect'){Resolve-CollectionPaths}else{$null}
     Activity ('[Sunucu] Toplama yardimcisi calisiyor; islem: '+$settings.action)
     if($settings.action -eq 'collect' -and $settings.collectionDelaySeconds -gt 0){Activity ('[Sunucu] Baslangic beklemesi: '+$settings.collectionDelaySeconds+' sn');Start-Sleep -Seconds $settings.collectionDelaySeconds}
     Activity '[Kesif] Sunucudaki Java surecleri ve JDK araclari araniyor...'
@@ -527,17 +552,14 @@ try {
             try{. (Join-Path $jobRoot 'remote-extras.ps1');Collect-RemoteExtraDiagnostics}
             catch{Activity ('[Ek tanilama] BASARISIZ: '+$_.Exception.Message);Deadline;$result.errors+=,('EXTRA_DIAGNOSTICS_FAILED: '+$_.Exception.Message)}
         }else{Activity '[Ek tanilama] Ping ve VxWorks ayarlarda kapali.'}
-        $install=[IO.Path]::GetFullPath($settings.installationDirectory)
-        if($settings.applicationDirectory -eq 'auto') {
-            $sub=Join-Path $install 'uygulama';$app=if(Test-Path -LiteralPath $sub -PathType Container){$sub}elseif((Test-Path -LiteralPath (Join-Path $install 'plugins') -PathType Container) -or (Test-Path -LiteralPath (Join-Path $install 'Log') -PathType Container)){$install}else{$sub}
-        }else{$app=if([IO.Path]::IsPathRooted($settings.applicationDirectory)){$settings.applicationDirectory}else{Join-Path $install $settings.applicationDirectory};$app=[IO.Path]::GetFullPath($app)}
+        $install=$collectionPaths.installationDirectory;$app=$collectionPaths.applicationDirectory
         $sources=@();$index=0;$logsReady=$true
         if(![string]::IsNullOrWhiteSpace([string]$settings.beforeLogCopyBatch)){
             $preparation=Run-BeforeLogCopy $app;$result.operations+=,$preparation
             if(!$preparation.success){
                 $logsReady=$false;$result.errors+=,('BEFORE_LOG_COPY_FAILED: '+$preparation.error+'; log kopyalama yapilmadi.')
             }
-            Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='logs';message=if($logsReady){'kaydal.bat tamamlandi; sunucu loglari kopyalaniyor...'}else{'kaydal.bat basarisiz; log kopyalama yapilmayacak.'}}
+            Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='logs';message=if($logsReady){'BAT tamamlandi; sunucu loglari kopyalaniyor...'}else{'BAT basarisiz; log kopyalama yapilmayacak.'}}
         }else{Activity '[Log hazirligi] Kopyalama oncesi BAT ayarlarda tanimli degil; dogrudan kaynaklar taranacak.'}
         foreach($spec in $settings.logs) {
             Deadline

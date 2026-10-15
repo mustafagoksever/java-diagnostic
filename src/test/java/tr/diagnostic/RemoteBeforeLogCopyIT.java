@@ -101,10 +101,10 @@ public class RemoteBeforeLogCopyIT {
                 // Route through the real scheduler without actually sending keys.
                 if(taskScenario)body="@echo off\r\nif 1==2 nircmd sendkeypress k a y d a l enter\r\n> app.log echo prepared log\r\n> batch-started.txt echo ready\r\necho fixture stdout\r\n"+((scenario.equals("interactive-timeout")||scenario.equals("interactive-cancel"))?":wait\r\ngoto wait\r\n":"exit /b 0\r\n");
                 // CMD BAT has no UTF-8 BOM; only ASCII content is needed here.
-                Files.write(log.resolve("kaydal.bat"),body.getBytes(StandardCharsets.US_ASCII));
+                Files.write(log.resolve("collect-logs.bat"),body.getBytes(StandardCharsets.US_ASCII));
             }
             CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.installationPath=source.toString();c.applicationPath="auto";c.resourceMonitoringSeconds=0;c.collectGcStats=false;
-            c.remoteBeforeLogCopyBatch="Log/kaydal.bat";c.remoteBeforeLogCopyTimeoutSeconds=scenario.contains("timeout")?1:10;
+            c.remoteBeforeLogCopyBatch="Log/collect-logs.bat";c.remoteBeforeLogCopyTimeoutSeconds=scenario.contains("timeout")?1:10;
             c.remoteBeforeLogCopyDelaySeconds=scenario.equals("delay")?30:0;
             CollectorConfiguration.LogDirectory spec=new CollectorConfiguration.LogDirectory();spec.sourcePath="Log";spec.base="application";spec.destination="fixture";spec.extensions.add(".log");spec.modifiedWithinHours=0;c.logs.add(spec);
             JsonObject settings;
@@ -138,7 +138,7 @@ public class RemoteBeforeLogCopyIT {
                 Assert.assertTrue(operation.toString(),operation.get("success").getAsBoolean());Assert.assertEquals(0,operation.get("exitCode").getAsInt());
                 Assert.assertEquals("prepared log",new String(Files.readAllBytes(copied),StandardCharsets.UTF_8).trim());
                 Assert.assertEquals(FileSupport.sha256(log.resolve("app.log")),FileSupport.sha256(copied));
-                Assert.assertTrue(new String(Files.readAllBytes(job.resolve("data/pre-log/kaydal.stdout.txt")),StandardCharsets.UTF_8).contains("fixture stdout"));
+                Assert.assertTrue(new String(Files.readAllBytes(job.resolve("data/pre-log/batch.stdout.txt")),StandardCharsets.UTF_8).contains("fixture stdout"));
                 if(scenario.equals("delay")){
                     Assert.assertEquals(30,operation.get("postBatchWaitSeconds").getAsInt());
                     Assert.assertTrue("Full thirty-second delay",java.time.Duration.between(java.time.Instant.parse(operation.get("batchCompletedAt").getAsString()),java.time.Instant.parse(operation.get("completedAt").getAsString())).toMillis()>=30000);

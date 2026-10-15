@@ -15,7 +15,8 @@ public final class RemoteCollectionOrchestrator {
     private final RemoteTransport transport;
     public RemoteCollectionOrchestrator(CollectorConfiguration config) { this(config, new RemotePowerShellTransport()); }
     RemoteCollectionOrchestrator(CollectorConfiguration config, RemoteTransport transport) { this.config = config; this.transport = transport; }
-    JsonObject settings(String action, Set<Long> selected, RemoteConnection connection) {
+    JsonObject settings(String action, Set<Long> selected, RemoteConnection connection) throws IOException {
+        if ("collect".equals(action)) ConfigurationManager.validateRemoteSources(config);
         JsonObject data = new JsonObject();
         data.addProperty("action", action); data.addProperty("jdkHome", connection.jdkHome);
         data.addProperty("workShare", config.remoteWorkShare);
@@ -58,6 +59,7 @@ public final class RemoteCollectionOrchestrator {
     }
     private CollectionOrchestrator.Result collectReport(Set<Long> selected, char[] password, RemoteConnection connection, Consumer<String> progress) throws IOException, InterruptedException {
         if (password == null || password.length < 12) throw new IOException("ZIP parolası en az 12 karakter olmalı.");
+        JsonObject request = settings("collect", selected, connection);
         Files.createDirectories(config.outputDirectory);
         Path staging = Files.createTempDirectory(config.outputDirectory, ".diagnostic-staging-");
         CollectionOrchestrator.Result result = new CollectionOrchestrator.Result();
@@ -68,7 +70,7 @@ public final class RemoteCollectionOrchestrator {
             progress.accept("[Hazırlık] Yerel rapor çalışma klasörü oluşturuldu; erişim izinleri ayarlanıyor.");
             FileSupport.restrictDirectory(staging);
             progress.accept("[Bağlantı] Uzak toplama başlatılıyor; WMI ve SMB erişim sonuçları sırayla günlüğe yazılacak.");
-            JsonObject event = transport.execute(settings("collect", selected, connection), staging, connection, progress);
+            JsonObject event = transport.execute(request, staging, connection, progress);
             JsonObject remote = event.getAsJsonObject("result"); Gson gson = new Gson();
             progress.accept("[Aktarım] Sunucu sonuçları bu bilgisayara alındı; rapor hazırlanıyor.");
             m.toolDiscovery = remote.has("toolDiscovery") && remote.get("toolDiscovery").isJsonObject() ? remote.getAsJsonObject("toolDiscovery") : null;

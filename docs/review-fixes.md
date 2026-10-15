@@ -19,7 +19,7 @@ Java 8 ile 45 unit + 27 Windows testi geçti (RemoteExtrasIT 14, RemoteBeforeLog
 
 Kaynak config.yaml Maven kaynak tanımıyla internal/config.yaml olarak JAR'a gömülür. Varsayılan çalışma yanındaki YAML'ı okumaz; açık --config operatör override'ı korunur. Kullanıcıya yalnız JAR verilir. Ayarlar JAR arşivinden çıkarılabilir; gömme erişim güvenliği değildir. Sunucu kimlik bilgileri gömülmez veya diske yazılmaz.
 
-Rapor çıktısı collector bilgisayarında C:/aselsan'dır. Yerel modda çıktı kökü uygulama kaynaklarının üstündeyse bütün log ağacı dışlanmaz; uygulama logları korunur, staging ve collector'ın önceki raporları atlanır. Bu yol yerleşimi için regresyon testi eklendi.
+Rapor çıktısı collector bilgisayarında C:/diagnostics'dır. Yerel modda çıktı kökü uygulama kaynaklarının üstündeyse bütün log ağacı dışlanmaz; uygulama logları korunur, staging ve collector'ın önceki raporları atlanır. Bu yol yerleşimi için regresyon testi eklendi.
 
 ## Derleme ve dağıtım
 

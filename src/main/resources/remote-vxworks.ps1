@@ -20,7 +20,7 @@ $serial.ReadTimeout=200;$serial.WriteTimeout=1000;$serial.Encoding=[Text.Encodin
 $consoleWriter=New-Object IO.StreamWriter((Join-Path $portRoot 'console.txt'),$false,$utf8)
 $consoleWriter.AutoFlush=$true;$portWatch=[Diagnostics.Stopwatch]::StartNew();$pagerActive=$false;$lastResponse=''
 $probe=[ordered]@{port=$portName;settings=$config;opened=$false;vxworksPrompt=$false;completed=$false;success=$false;timedOut=$false;status='FAILED';identity=$null;initialTaskCount=0;attemptedTaskCount=0;tracesWithFrames=0;attemptedTaskInfoCount=0;taskInfosCollected=0;networkAvailable=$false;socketRows=@();tasks=@();commands=@();afterTaskIds=@();addedTaskIds=@();removedTaskIds=@();error=$null}
-$probe.tatlYaz=[pscustomobject]@{attempted=$false;collected=$false;artifact=$null;error=$null}
+$probe.customCommand=[pscustomobject]@{attempted=$false;collected=$false;artifact=$null;error=$null;command=[string]$config.customCommand}
 $probe.diagnostics=@();$probe.versionConfirmed=$false
 function Save-Json([string]$path,$value){[IO.File]::WriteAllText($path,($value|ConvertTo-Json -Depth 12),$utf8)}
 function Artifact([string]$name){return ('vxworks/ports/port-'+$portName+'/'+$name.Replace('\','/'))}
@@ -54,7 +54,7 @@ function Read-Response([int]$timeoutMillis=10000,[int]$postPromptMillis=0){
             if($firstPromptAt -lt 0){
                 $firstPromptAt=$promptAt
                 # The command still has its original response timeout. After a
-                # prompt arrives, TatlYaz gets a bounded window for late logs.
+                # prompt arrives, the configured command gets a bounded window for late logs.
                 if($postPromptMillis -gt 0){$readBudget=[Math]::Max($readBudget,$firstPromptAt+$postPromptMillis+500)}
             }
         }
@@ -77,14 +77,14 @@ function Run-Command([string]$command,[string]$artifact){
     $path=Join-Path $portRoot $artifact
     [void][IO.Directory]::CreateDirectory((Split-Path $path -Parent))
     $consoleWriter.WriteLine("`r`n[COLLECTOR COMMAND: $command]")
-    $captureMillis=if($command -ceq 'TatlYaz'){3000}else{0}
+    $captureMillis=if($config.customCommand -and $command -ceq $config.customCommand){[int]$config.customCommandDelaySeconds*1000}else{0}
     $op=[ordered]@{command=$command;artifact=(Artifact $artifact);startedAtUtc=[DateTime]::UtcNow.ToString('o');durationMillis=0;postPromptCaptureMillis=$captureMillis;returnedPrompt=$false;unsupported=$false;frameCount=0;error=$null}
     $watch=[Diagnostics.Stopwatch]::StartNew();$response=''
     try{
         Check-Limits
         Progress ($portName+' | '+$command+' | BASLADI; cihaz yaniti bekleniyor.')
         $serial.Write($command+"`r")
-        if($captureMillis){Progress ($portName+': TatlYaz yaniti ve ardindan 3 saniyelik ek log ciktisi bekleniyor...')}
+        if($captureMillis){Progress ($portName+': '+$command+' yaniti ve ardindan '+$config.customCommandDelaySeconds+' saniyelik ek log ciktisi bekleniyor...')}
         $response=Read-Response ([int]$config.commandTimeoutSeconds*1000) $captureMillis
         $op.returnedPrompt=Is-Prompt $response
         $op.unsupported=$response -match '(?i)unknown symbol name|undefined symbol|syntax error'
@@ -189,16 +189,18 @@ try{
         $probe.identity=Parse-Identity $identityReply $identityCommand (Artifact $identityArtifact)
         if($probe.identity.collected){break}
     }
-    Progress ($portName+': TatlYaz ciktisi aliniyor...')
-    $probe.tatlYaz.attempted=$true;$probe.tatlYaz.artifact=Artifact 'TatlYaz.txt'
+    if($config.customCommand){
+    Progress ($portName+': '+$config.customCommand+' ciktisi aliniyor...')
+    $probe.customCommand.attempted=$true;$probe.customCommand.artifact=Artifact 'custom-command.txt'
     try{
-        [void](Run-Command 'TatlYaz' 'TatlYaz.txt')
-        $tatlOp=$probe.commands[$probe.commands.Count-1]
-        $probe.tatlYaz.error=if($tatlOp.unsupported){'TATLYAZ_UNSUPPORTED: see raw response'}else{$tatlOp.error}
+        [void](Run-Command ([string]$config.customCommand) 'custom-command.txt')
+        $customOp=$probe.commands[$probe.commands.Count-1]
+        $probe.customCommand.error=if($customOp.unsupported){'CUSTOM_COMMAND_UNSUPPORTED: see raw response'}else{$customOp.error}
         # Keep this application-specific output verbatim. Its trailing interpreter
         # return value has no assumed meaning, just as for other void functions.
-        $probe.tatlYaz.collected=($tatlOp.returnedPrompt -and !$probe.tatlYaz.error)
-    }catch{$probe.tatlYaz.error=$_.Exception.Message;throw}
+        $probe.customCommand.collected=($customOp.returnedPrompt -and !$probe.customCommand.error)
+    }catch{$probe.customCommand.error=$_.Exception.Message;throw}
+    }
     Progress ($portName+': guncel i task listesi aliniyor...')
     $taskList=Run-Command 'i' 'i-before.txt'
     $probe.tasks=@(Parse-Tasks $taskList);$probe.initialTaskCount=$probe.tasks.Count
@@ -268,7 +270,7 @@ try{
     }
     $probe.networkAvailable=$probe.socketRows.Count -gt 0
     $probe.completed=$true
-    $probe.success=($probe.tracesWithFrames -eq $probe.initialTaskCount -and $probe.taskInfosCollected -eq $probe.initialTaskCount -and $probe.networkAvailable -and $probe.identity.collected -and $probe.tatlYaz.collected -and !@($probe.diagnostics|Where-Object{!$_.collected}).Count)
+    $probe.success=($probe.tracesWithFrames -eq $probe.initialTaskCount -and $probe.taskInfosCollected -eq $probe.initialTaskCount -and $probe.networkAvailable -and $probe.identity.collected -and (!$config.customCommand -or $probe.customCommand.collected) -and !@($probe.diagnostics|Where-Object{!$_.collected}).Count)
     $probe.status=if($probe.success){'COLLECTED'}else{'PARTIAL'}
 }catch{
     $probe.error=$_.Exception.Message;$probe.timedOut=$probe.error -match 'TIMEOUT'

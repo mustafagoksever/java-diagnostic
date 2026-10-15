@@ -36,7 +36,7 @@ public final class RemoteDiagnosticsReportWriter {
         writeText(staging.resolve("ping/SONUC.txt"), text.toString());
     }
     private void writeVxWorks(JsonObject report, Path staging, List<String> errors) throws IOException {
-        StringBuilder text = new StringBuilder("VXWORKS TASK İZLERİ VE SOCKET/PORT DURUMU\nÖnce version ile VxWorks sürümü doğrulanır; ifconfig, gerekirse ifShow ile cihazın IP/MAC bilgisi okunur.\nArdından TatlYaz ve ilk i listesindeki TASKID'ler için tt 0xTASKID ve ti 0xTASKID denenir.\nEk sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'lar için tw 0xTASKID.\n\n");
+        StringBuilder text = new StringBuilder("VXWORKS TASK İZLERİ VE SOCKET/PORT DURUMU\nÖnce version ile VxWorks sürümü doğrulanır; ifconfig, gerekirse ifShow ile cihazın IP/MAC bilgisi okunur.\nArdından config ile seçilen özel komut ve ilk i listesindeki TASKID'ler için tt 0xTASKID ve ti 0xTASKID denenir.\nEk sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'lar için tw 0xTASKID.\n\n");
         if ("auto".equals(value(report,"discoveryMode"))) text.append("Port seçimi: SUNUCUDA OTOMATİK KEŞİF\nBulunan portlar: ").append(joined(report,"detectedPorts")).append('\n');
         else text.append("Port seçimi: config'teki port listesi\n");
         for (JsonElement error : ResourceMonitor.array(report,"errors")) if(error.isJsonPrimitive()) text.append("Port keşif notu: ").append(error.getAsString()).append('\n');
@@ -58,11 +58,11 @@ public final class RemoteDiagnosticsReportWriter {
             if (!flag(port,"networkAvailable")) text.append(" | socket tablosu ALINAMADI; portlar kapalı anlamına gelmez");
             if (!value(port,"error").isEmpty()) text.append(" | ").append(value(port,"error"));
             text.append('\n');
-            if(port.has("tatlYaz") && port.get("tatlYaz").isJsonObject()) {
-                JsonObject tatl=port.getAsJsonObject("tatlYaz");
-                text.append("  TatlYaz: ").append(flag(tatl,"collected")?"ALINDI":flag(tatl,"attempted")?"ALINAMADI":"DENENMEDİ");
-                if(!value(tatl,"artifact").isEmpty()) text.append(" | çıktı: ").append(value(tatl,"artifact"));
-                if(!value(tatl,"error").isEmpty()) text.append(" | ").append(value(tatl,"error"));
+            if(port.has("customCommand") && port.get("customCommand").isJsonObject()) {
+                JsonObject custom=port.getAsJsonObject("customCommand");
+                text.append("  Özel komut: ").append(flag(custom,"collected")?"ALINDI":flag(custom,"attempted")?"ALINAMADI":"DENENMEDİ");
+                if(!value(custom,"artifact").isEmpty()) text.append(" | çıktı: ").append(value(custom,"artifact"));
+                if(!value(custom,"error").isEmpty()) text.append(" | ").append(value(custom,"error"));
                 text.append('\n');
             }
             JsonObject detail;

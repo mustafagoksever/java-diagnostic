@@ -23,23 +23,25 @@ public class CliIT {
                 cli.getOutputStream().close();boolean done=cli.waitFor(15,TimeUnit.SECONDS);if(!done)cli.destroyForcibly();Assert.assertTrue("Standalone JAR exits",done);
                 String text=new String(Files.readAllBytes(output),StandardCharsets.UTF_8);
                 Assert.assertEquals(text+new String(Files.readAllBytes(error),StandardCharsets.UTF_8),0,cli.exitValue());
-                Assert.assertTrue(text,text.contains("C:\\aselsan"));
+                Assert.assertTrue(text,text.contains(new ConfigurationManager().load(Paths.get("config.yaml")).outputDirectory.toString()));
             }
         } finally {FileSupport.deleteTree(root);}
     }
     @Test public void packagedJarCollectsFixtureUsingPasswordEnvironment() throws Exception {
         collectFixture(false);
     }
-    @Test public void packagedJarUsesEmbeddedPasswordWithoutPromptOrOutputLeak() throws Exception {
+    @Test public void packagedJarUsesConfiguredPasswordWithoutPromptOrOutputLeak() throws Exception {
         collectFixture(true);
     }
     private void collectFixture(boolean embeddedPassword) throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());
         Path root = Files.createTempDirectory("diagnostic-cli-it-");
-        char[] password = embeddedPassword ? ReportPassword.defaultPassword() : ZipEncryptionService.generatePassword();
+        char[] password = ZipEncryptionService.generatePassword();
         try (WindowsAttachIT.Fixture fixture = new WindowsAttachIT.Fixture(false)) {
             Path yaml = root.resolve("config.yaml");
-            Files.write(yaml, "outputDirectory: reports\nresourceMonitoringSeconds: 3\nlogs: []\n".getBytes(StandardCharsets.UTF_8));
+            String settings = "outputDirectory: reports\nresourceMonitoringSeconds: 3\nlogs: []\n";
+            if (embeddedPassword) settings += "zipPassword: '" + new String(password) + "'\n";
+            Files.write(yaml, settings.getBytes(StandardCharsets.UTF_8));
             Path jar = Paths.get("target/java-diagnostic-collector.jar").toAbsolutePath();
             Path java = Paths.get(System.getProperty("java.home"), "bin", "java.exe");
             Path out = root.resolve("cli.out"), err = root.resolve("cli.err");

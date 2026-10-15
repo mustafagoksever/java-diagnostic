@@ -6,7 +6,7 @@ import java.util.List;
 
 public final class CollectorConfiguration {
     public String mode = "remote";
-    public String remoteHost = "15.30.9.176";
+    public String remoteHost = "";
     public String remoteUsername = "";
     public String remoteJdkHome = "auto";
     public int remoteTimeoutSeconds = 1800;
@@ -17,7 +17,7 @@ public final class CollectorConfiguration {
     public int remoteBeforeLogCopyDelaySeconds = 30;
     public PingSettings ping = new PingSettings();
     public VxWorksSettings vxworks = new VxWorksSettings();
-    public String installationPath = "C:/aselsan/ares2n";
+    public String installationPath = "";
     public String applicationPath = "auto";
     public Path outputDirectory;
     public Path installationDirectory;
@@ -31,6 +31,13 @@ public final class CollectorConfiguration {
     public List<String> additionalProcessNames = new ArrayList<>();
     public boolean collectGcStats = true;
     public List<LogDirectory> logs = new ArrayList<>();
+    private transient char[] zipPassword = new char[0];
+
+    void setZipPassword(String value) {
+        java.util.Arrays.fill(zipPassword, '\0');
+        zipPassword = value.toCharArray();
+    }
+    char[] zipPasswordCopy() { return zipPassword.clone(); }
 
     public static final class PingSettings {
         public boolean enabled;
@@ -53,6 +60,8 @@ public final class CollectorConfiguration {
         public int portTimeoutSeconds = 180;
         public int commandTimeoutSeconds = 10;
         public int maxOutputMb = 8;
+        public String customCommand = "";
+        public int customCommandDelaySeconds = 3;
     }
 
     public static final class LogDirectory {

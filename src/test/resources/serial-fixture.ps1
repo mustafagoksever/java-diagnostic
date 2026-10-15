@@ -7,7 +7,7 @@ function New-FakeSerial {
     $fake|Add-Member ScriptMethod ReadExisting {
         $value=$this.Buffer;$this.Buffer=''
         if($this.LateWatch -and $this.LateWatch.ElapsedMilliseconds -ge 2000 -and $this.LateChunk){$value+=$this.LateChunk;$this.LateChunk=''}
-        if($this.LateWatch -and $global:fixtureTiMode -eq 'tatl-cancel' -and $this.LateWatch.ElapsedMilliseconds -ge 500){[IO.File]::WriteAllText((Join-Path $global:fixtureRoot 'cancel.txt'),'cancel')}
+        if($this.LateWatch -and $global:fixtureTiMode -eq 'custom-cancel' -and $this.LateWatch.ElapsedMilliseconds -ge 500){[IO.File]::WriteAllText((Join-Path $global:fixtureRoot 'cancel.txt'),'cancel')}
         return $value
     }
     $fake|Add-Member ScriptMethod Write {
@@ -37,20 +37,20 @@ function New-FakeSerial {
             if($this.PendingPage){$this.Buffer=$row2+"`r`n"+$row3+"`r`nvalue = 0`r`n-> ";$this.PendingPage=$false}else{$this.Buffer="`r`n-> "};return
         }
         if($cmd -eq 'i'){$this.PendingPage=$true;$this.Buffer="i`r`nNAME ENTRY TID PRI STATUS`r`n"+$row1+"`r`nType <CR> to continue, Q<CR> or q<CR> to stop: ";return}
-        if($cmd -eq 'TatlYaz'){
-            if($global:fixtureTiMode -eq 'tatl-delayed'){$this.LateWatch=[Diagnostics.Stopwatch]::StartNew();$this.LateChunk="`r`nLATE_TATLYAZ_OUTPUT`r`n-> "}
-            if($global:fixtureTiMode -eq 'tatl-cancel'){$this.LateWatch=[Diagnostics.Stopwatch]::StartNew()}
-            if($global:fixtureTiMode -eq 'tatl-oversize'){$this.Buffer="TatlYaz`r`nLARGE_BEGIN"+('x'*(1MB+1));return}
-            if($global:fixtureTiMode -eq 'tatl-write-failed'){throw 'FIXTURE_TATLYAZ_WRITE_FAILED'}
-            if($global:fixtureTiMode -eq 'tatl-silent'){$this.Buffer="TatlYaz`r`npartial custom output, no prompt";return}
-            if($global:fixtureTiMode -eq 'tatl-unsupported'){$this.Buffer="TatlYaz`r`nC interp: unknown symbol name.`r`n-> ";return}
-            $this.Buffer="TatlYaz`r`nFIXTURE_CUSTOM_OUTPUT`r`nvalue = -1`r`n-> ";return
+        if($cmd -eq 'fixtureIdentify'){
+            if($global:fixtureTiMode -eq 'custom-delayed'){$this.LateWatch=[Diagnostics.Stopwatch]::StartNew();$this.LateChunk="`r`nLATE_CUSTOM_COMMAND_OUTPUT`r`n-> "}
+            if($global:fixtureTiMode -eq 'custom-cancel'){$this.LateWatch=[Diagnostics.Stopwatch]::StartNew()}
+            if($global:fixtureTiMode -eq 'custom-oversize'){$this.Buffer="fixtureIdentify`r`nLARGE_BEGIN"+('x'*(1MB+1));return}
+            if($global:fixtureTiMode -eq 'custom-write-failed'){throw 'FIXTURE_CUSTOM_COMMAND_WRITE_FAILED'}
+            if($global:fixtureTiMode -eq 'custom-silent'){$this.Buffer="fixtureIdentify`r`npartial custom output, no prompt";return}
+            if($global:fixtureTiMode -eq 'custom-unsupported'){$this.Buffer="fixtureIdentify`r`nC interp: unknown symbol name.`r`n-> ";return}
+            $this.Buffer="fixtureIdentify`r`nFIXTURE_CUSTOM_OUTPUT`r`nvalue = -1`r`n-> ";return
         }
         if(!$global:fixtureNoIdentity -and $global:fixtureWide -and $cmd -eq 'ifconfig'){
-            $this.Buffer="ifconfig`r`nlo0 Link type:Local loopback`r`n inet 127.0.0.1 mask 255.255.255.255`r`ngei0 Link type:Ethernet HWaddr 00:03:73:08:a1:e2`r`n inet 15.30.9.198 mask 255.0.0.0 broadcast 15.255.255.255`r`n inet6 unicast fe80::203:73ff:fe08:a1e2%gei0`r`n inet 999.0.0.1`r`nGateway: 15.30.9.1`r`nvalue = 0`r`n-> ";return
+            $this.Buffer="ifconfig`r`nlo0 Link type:Local loopback`r`n inet 127.0.0.1 mask 255.255.255.255`r`ngei0 Link type:Ethernet HWaddr 02:00:00:00:00:11`r`n inet 192.0.2.198 mask 255.0.0.0 broadcast 192.0.2.255`r`n inet6 unicast fe80::1%gei0`r`n inet 999.0.0.1`r`nGateway: 192.0.2.1`r`nvalue = 0`r`n-> ";return
         }
         if(!$global:fixtureNoIdentity -and !$global:fixtureWide -and $cmd -eq 'ifShow'){
-            $this.Buffer="ifShow`r`nlo (unit number 0):`r`n inet: 127.0.0.1`r`nmgi (unit number 0):`r`n inet: 15.30.9.195`r`n Broadcast address: 15.255.255.255`r`n Netmask 0xff000000 Subnetmask 0xff000000`r`n Ethernet address is 00:03:73:77:95:02`r`nvalue = 0`r`n-> ";return
+            $this.Buffer="ifShow`r`nlo (unit number 0):`r`n inet: 127.0.0.1`r`nmgi (unit number 0):`r`n inet: 192.0.2.195`r`n Broadcast address: 192.0.2.255`r`n Netmask 0xff000000 Subnetmask 0xff000000`r`n Ethernet address is 02:00:00:00:00:22`r`nvalue = 0`r`n-> ";return
         }
         if($cmd -eq 'inetstatShow'){$this.Buffer="inetstatShow`r`nvalue = 0`r`n-> ";return}
         if($cmd -eq 'netstat "-a -n"'){$this.Buffer=$cmd+"`r`nTCP 0 0 0.0.0.0.23 0.0.0.0.* LISTEN`r`nUDP 0 0 0.0.0.0.111 0.0.0.0.*`r`nvalue = 0`r`n-> ";return}

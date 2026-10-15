@@ -33,6 +33,7 @@ public final class Main {
             if (options.username != null) config.remoteUsername = options.username;
             if (options.remoteJdk != null) config.remoteJdkHome = options.remoteJdk;
             if (options.command.equals("validate-config")) {
+                if ("remote".equals(config.mode)) ConfigurationManager.validateRemoteSources(config);
                 System.out.println("Konfigürasyon geçerli. Kaynakların varlığı toplama sırasında denetlenir.");
                 System.out.println("Mod: " + config.mode + (config.mode.equals("remote") ? " | Sunucu bağlantısı config'ten okunur." : ""));
                 if (config.mode.equals("remote")) System.out.println("Sunucudaki kurulum: " + config.installationPath + "\nUygulama (sunucuda çözülecek): " + config.applicationPath + "\nBu bilgisayardaki çıktı: " + config.outputDirectory);
@@ -46,6 +47,7 @@ public final class Main {
                 if(!options.admin)config.mode="remote";
                 SwingUtilities.invokeLater(() -> new CollectorFrame(config,options.admin,endpointSettings).setVisible(true)); return -1;
             }
+            if (options.command.equals("collect") && "remote".equals(config.mode)) ConfigurationManager.validateRemoteSources(config);
             CollectionOrchestrator orchestrator = new CollectionOrchestrator(config);
             if ("remote".equals(config.mode)) connection = readRemoteConnection(config, options.remotePasswordEnv);
             if (options.command.equals("list-java")) {
@@ -64,7 +66,7 @@ public final class Main {
                 if (value == null || value.isEmpty()) throw new IllegalArgumentException("Parola ortam değişkeni tanımlı veya dolu değil.");
                 password = value.toCharArray();
             } else {
-                password = ReportPassword.defaultPassword();
+                password = ReportPassword.configured(config);
             }
             if (password == null || password.length < 12) throw new IllegalArgumentException("ZIP parolası en az 12 karakter olmalı.");
             CollectionOrchestrator.Result result = connection == null ? orchestrator.collect(options.all ? null : options.pids, password, System.out::println) : new RemoteCollectionOrchestrator(config).collect(options.all ? null : options.pids, password, connection, System.out::println);

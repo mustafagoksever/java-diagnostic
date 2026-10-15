@@ -1,11 +1,15 @@
 package tr.diagnostic;
 
-/** Default deployment password. Embedded values remain recoverable from a JAR. */
+/** Retrieves a fresh, clearable buffer from configuration; contains no deployment secret. */
 final class ReportPassword {
     private ReportPassword() { }
 
-    static char[] defaultPassword() {
-        // Return a fresh, clearable buffer; never print or persist it in a report.
-        return new char[]{'A', 's', 'e', 'l', 's', 'a', 'n', '1', '2', '3', 'R', 'a', 'd', 'a', 'r'};
+    static char[] configured(CollectorConfiguration config) {
+        char[] password = config.zipPasswordCopy();
+        if (password.length < 12) {
+            java.util.Arrays.fill(password, '\0');
+            throw new IllegalArgumentException("ZIP parolasını config.yaml zipPassword alanında tanımlayın veya CLI parola seçeneklerini kullanın.");
+        }
+        return password;
     }
 }

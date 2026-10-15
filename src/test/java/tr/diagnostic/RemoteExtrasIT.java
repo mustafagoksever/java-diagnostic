@@ -47,16 +47,18 @@ public class RemoteExtrasIT {
     @Test public void invalidDiscoveredNamesAreNotSentToSerialHelpers() throws Exception {worker(false,false,"invalid");}
     @Test public void listingWithAutomaticPortsEnabledDoesNotRunDiscovery() throws Exception {worker(true,false,"failure");}
     @Test public void automaticReaderAcceptsDiscoveredPortBeyondTheOldManualRange() throws Exception {serial(false,false,false,"auto-port");}
-    @Test public void unsupportedTatlYazIsRecordedAndTaskAndNetworkCollectionContinues() throws Exception {serial(false,false,false,"tatl-unsupported");}
-    @Test public void tatlYazTimeoutPreservesItsOutputAndStopsFurtherCommands() throws Exception {serial(false,false,false,"tatl-silent");}
-    @Test public void tatlYazWriteFailureDoesNotCopyThePreviousIdentityResponse() throws Exception {serial(false,false,false,"tatl-write-failed");}
+    @Test public void unsupportedfixtureIdentifyIsRecordedAndTaskAndNetworkCollectionContinues() throws Exception {serial(false,false,false,"custom-unsupported");}
+    @Test public void customCommandTimeoutPreservesItsOutputAndStopsFurtherCommands() throws Exception {serial(false,false,false,"custom-silent");}
+    @Test public void customCommandWriteFailureDoesNotCopyThePreviousIdentityResponse() throws Exception {serial(false,false,false,"custom-write-failed");}
     @Test public void unsupportedAdditionalDiagnosticsPreserveNativeErrorsAndContinueNetwork() throws Exception {serial(false,false,false,"diagnostic-unsupported");}
     @Test public void additionalDiagnosticTimeoutPreservesTracesAndStopsFurtherCommands() throws Exception {serial(false,false,false,"diagnostic-silent");}
     @Test public void arrowPromptWithoutVxWorksVersionNeverReceivesDiagnosticCommands() throws Exception {serial(false,false,false,"version-invalid");}
     @Test public void unknownSymbolMentioningVxWorksDoesNotPassVersionConfirmation() throws Exception {serial(false,false,false,"version-unsupported");}
-    @Test public void responseLimitPreservesBoundedPartialOutputEvenWhenTheFirstReadIsOversized() throws Exception {serial(false,false,false,"tatl-oversize");}
-    @Test public void tatlYazCapturesLateLogsForThreeSecondsBeforeTheNextCommand() throws Exception {serial(false,false,false,"tatl-delayed");}
-    @Test public void cancellationDuringTatlYazCapturePreservesOutputAndStopsCommands() throws Exception {serial(false,false,false,"tatl-cancel");}
+    @Test public void responseLimitPreservesBoundedPartialOutputEvenWhenTheFirstReadIsOversized() throws Exception {serial(false,false,false,"custom-oversize");}
+    @Test public void customCommandCapturesLateLogsForThreeSecondsBeforeTheNextCommand() throws Exception {serial(false,false,false,"custom-delayed");}
+    @Test public void emptyCustomCommandSkipsOnlyTheOptionalCommand() throws Exception {serial(false,false,false,"custom-disabled");}
+    @Test public void customSymbolAndDelayAreReadFromSettings() throws Exception {serial(false,false,false,"custom-renamed");}
+    @Test public void cancellationDuringfixtureIdentifyCapturePreservesOutputAndStopsCommands() throws Exception {serial(false,false,false,"custom-cancel");}
     @Test public void unsupportedTimeStillCollectsModulesAndNetwork() throws Exception {serial(false,false,false,"time-unsupported");}
     @Test public void timeTimeoutPreservesPartialLogAndDoesNotSendModuleShow() throws Exception {serial(false,false,false,"time-silent");}
 
@@ -71,7 +73,10 @@ public class RemoteExtrasIT {
         try{
             String port=tiMode.equals("auto-port")?"COM500":wide?"COM17":"COM7";
             CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.vxworks.enabled=true;c.vxworks.autoDiscoverPorts=tiMode.equals("auto-port");if(!c.vxworks.autoDiscoverPorts)c.vxworks.ports.add(port);c.vxworks.commandTimeoutSeconds=(silent||tiMode.endsWith("silent"))?1:5;c.vxworks.portTimeoutSeconds=30;
-            if(tiMode.equals("tatl-delayed"))c.vxworks.commandTimeoutSeconds=1;
+            if(tiMode.equals("custom-delayed"))c.vxworks.commandTimeoutSeconds=1;
+            c.vxworks.customCommand="fixtureIdentify";
+            if(tiMode.equals("custom-disabled"))c.vxworks.customCommand="";
+            if(tiMode.equals("custom-renamed")){c.vxworks.customCommand="fixtureInfo";c.vxworks.customCommandDelaySeconds=1;}
             writeSettings(job,c,"collect");
             String reader=PowerShell.resource("remote-vxworks.ps1");
             reader=reader.replaceAll("(?m)^\\$serial=New-Object IO\\.Ports\\.SerialPort.*$",Matcher.quoteReplacement("$serial=New-FakeSerial"));
@@ -79,6 +84,7 @@ public class RemoteExtrasIT {
             script(job.resolve("remote-vxworks.ps1"),reader);
             String fixture;
             try(InputStream input=getClass().getResourceAsStream("/serial-fixture.ps1")){fixture=new String(bytes(input),StandardCharsets.UTF_8);}
+            if(tiMode.equals("custom-renamed"))fixture=fixture.replace("fixtureIdentify","fixtureInfo");
             String launch="[Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo('tr-TR');$global:fixtureRoot='"+quote(job)+"';$global:fixtureWide="+(wide?"$true":"$false")+";$global:fixtureSilent="+(silent?"$true":"$false")+";$global:fixtureNoIdentity="+(noIdentity?"$true":"$false")+";$global:fixtureTiMode='"+tiMode+"';\r\n"+fixture+"\r\n& '"+quote(job.resolve("remote-vxworks.ps1"))+"' -PortName '"+port+"' -JobRoot '"+quote(job)+"' -RequestFile '"+quote(job.resolve("request.json"))+"'";
             script(job.resolve("launch.ps1"),launch);CommandResult execution=run(job,"launch.ps1",30000);Assert.assertTrue(execution.error(),execution.success());
             JsonObject result=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject();Assert.assertTrue("Adapter disposed",Files.isRegularFile(job.resolve("disposed.txt")));
@@ -97,44 +103,65 @@ public class RemoteExtrasIT {
             Assert.assertTrue(Files.isDirectory(job.resolve("data/vxworks/ports/port-"+port)));
             if(silent){Assert.assertFalse(result.toString(),result.get("vxworksPrompt").getAsBoolean());Assert.assertEquals(0,result.getAsJsonArray("commands").size());return;}
             if(tiMode.startsWith("version-")){
-                Assert.assertFalse(result.get("versionConfirmed").getAsBoolean());Assert.assertFalse(result.getAsJsonObject("tatlYaz").get("attempted").getAsBoolean());
+                Assert.assertFalse(result.get("versionConfirmed").getAsBoolean());Assert.assertFalse(result.getAsJsonObject("customCommand").get("attempted").getAsBoolean());
                 Assert.assertEquals(1,result.getAsJsonArray("commands").size());Assert.assertTrue(result.get("error").getAsString().contains("VXWORKS_VERSION_NOT_CONFIRMED"));return;
             }
             Assert.assertTrue(result.get("versionConfirmed").getAsBoolean());
-            JsonObject tatl=result.getAsJsonObject("tatlYaz");Assert.assertTrue(tatl.get("attempted").getAsBoolean());
-            Path tatlFile=job.resolve("data").resolve(tatl.get("artifact").getAsString());
-            int tatlCommands=0;for(JsonElement item:result.getAsJsonArray("commands"))if(item.getAsJsonObject().get("command").getAsString().equals("TatlYaz"))tatlCommands++;
-            Assert.assertEquals(1,tatlCommands);
-            if(tiMode.equals("tatl-cancel")){
-                Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertTrue(tatl.get("error").getAsString().contains("REMOTE_CANCELLED"));
-                Assert.assertEquals(4,result.getAsJsonArray("commands").size());Assert.assertTrue(Files.isRegularFile(tatlFile));return;
-            }
-            if(tiMode.equals("tatl-oversize")){
-                Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertEquals("FAILED",result.get("status").getAsString());
-                Assert.assertTrue(tatl.get("error").getAsString().contains("SERIAL_RESPONSE_LIMIT"));
-                Assert.assertTrue("Oversized first read must leave bounded partial response",Files.isRegularFile(tatlFile));Assert.assertEquals(1024*1024,Files.size(tatlFile));
-                Assert.assertTrue(new String(Files.readAllBytes(tatlFile),StandardCharsets.UTF_8).startsWith("TatlYaz\r\nLARGE_BEGIN"));return;
-            }
-            if(tiMode.equals("tatl-silent")||tiMode.equals("tatl-write-failed")){
-                Assert.assertFalse(tatl.get("collected").getAsBoolean());Assert.assertFalse(result.get("completed").getAsBoolean());
-                Assert.assertEquals(0,result.getAsJsonArray("tasks").size());Assert.assertEquals(4,result.getAsJsonArray("commands").size());
-                if(tiMode.equals("tatl-silent")){
-                    Assert.assertEquals("TIMED_OUT",result.get("status").getAsString());Assert.assertTrue(tatl.get("error").getAsString().contains("SERIAL_RESPONSE_TIMEOUT"));
-                    Assert.assertTrue(new String(Files.readAllBytes(tatlFile),StandardCharsets.UTF_8).contains("partial custom output"));
+            if(tiMode.equals("custom-disabled")||tiMode.equals("custom-renamed")){
+                JsonObject optional=result.getAsJsonObject("customCommand");
+                Assert.assertTrue(result.toString(),result.get("completed").getAsBoolean());
+                Assert.assertEquals(3,result.get("attemptedTaskCount").getAsInt());
+                Assert.assertTrue(result.get("networkAvailable").getAsBoolean());
+                int matched=0;
+                for(JsonElement item:result.getAsJsonArray("commands")){
+                    JsonObject command=item.getAsJsonObject();String name=command.get("command").getAsString();
+                    Assert.assertNotEquals("fixtureIdentify",name);
+                    if(name.equals("fixtureInfo")){matched++;Assert.assertEquals(1000,command.get("postPromptCaptureMillis").getAsInt());}
+                }
+                if(tiMode.equals("custom-disabled")){
+                    Assert.assertFalse(optional.get("attempted").getAsBoolean());Assert.assertEquals(0,matched);
+                    Assert.assertFalse(Files.exists(job.resolve("data/vxworks/ports/port-COM7/custom-command.txt")));
                 }else{
-                    Assert.assertEquals("FAILED",result.get("status").getAsString());Assert.assertTrue(tatl.get("error").getAsString().contains("FIXTURE_TATLYAZ_WRITE_FAILED"));Assert.assertFalse(Files.exists(tatlFile));
+                    Assert.assertEquals(1,matched);Assert.assertTrue(optional.get("collected").getAsBoolean());
+                    Assert.assertEquals("fixtureInfo",optional.get("command").getAsString());
+                    Assert.assertTrue(new String(Files.readAllBytes(job.resolve("data").resolve(optional.get("artifact").getAsString())),StandardCharsets.UTF_8).startsWith("fixtureInfo"));
                 }
                 return;
             }
-            Assert.assertEquals(!tiMode.equals("tatl-unsupported"),tatl.get("collected").getAsBoolean());
-            String tatlText=new String(Files.readAllBytes(tatlFile),StandardCharsets.UTF_8);
-            if(tiMode.equals("tatl-unsupported")){Assert.assertTrue(tatl.get("error").getAsString().contains("TATLYAZ_UNSUPPORTED"));Assert.assertTrue(tatlText.contains("unknown symbol"));}
-            else Assert.assertTrue(tatlText.contains("FIXTURE_CUSTOM_OUTPUT"));
-            JsonObject tatlOp=null;for(JsonElement item:result.getAsJsonArray("commands"))if(item.getAsJsonObject().get("command").getAsString().equals("TatlYaz"))tatlOp=item.getAsJsonObject();
-            Assert.assertNotNull(tatlOp);Assert.assertEquals(3000,tatlOp.get("postPromptCaptureMillis").getAsInt());Assert.assertTrue(tatlOp.toString(),tatlOp.get("durationMillis").getAsLong()>=3000);
-            if(tiMode.equals("tatl-delayed")){
-                Assert.assertTrue(tatlText.contains("LATE_TATLYAZ_OUTPUT"));
-                Assert.assertFalse(new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-COM7/i-before.txt")),StandardCharsets.UTF_8).contains("LATE_TATLYAZ_OUTPUT"));
+            JsonObject custom=result.getAsJsonObject("customCommand");Assert.assertTrue(custom.get("attempted").getAsBoolean());
+            Path customFile=job.resolve("data").resolve(custom.get("artifact").getAsString());
+            int customCommands=0;for(JsonElement item:result.getAsJsonArray("commands"))if(item.getAsJsonObject().get("command").getAsString().equals("fixtureIdentify"))customCommands++;
+            Assert.assertEquals(1,customCommands);
+            if(tiMode.equals("custom-cancel")){
+                Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertTrue(custom.get("error").getAsString().contains("REMOTE_CANCELLED"));
+                Assert.assertEquals(4,result.getAsJsonArray("commands").size());Assert.assertTrue(Files.isRegularFile(customFile));return;
+            }
+            if(tiMode.equals("custom-oversize")){
+                Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertEquals("FAILED",result.get("status").getAsString());
+                Assert.assertTrue(custom.get("error").getAsString().contains("SERIAL_RESPONSE_LIMIT"));
+                Assert.assertTrue("Oversized first read must leave bounded partial response",Files.isRegularFile(customFile));Assert.assertEquals(1024*1024,Files.size(customFile));
+                Assert.assertTrue(new String(Files.readAllBytes(customFile),StandardCharsets.UTF_8).startsWith("fixtureIdentify\r\nLARGE_BEGIN"));return;
+            }
+            if(tiMode.equals("custom-silent")||tiMode.equals("custom-write-failed")){
+                Assert.assertFalse(custom.get("collected").getAsBoolean());Assert.assertFalse(result.get("completed").getAsBoolean());
+                Assert.assertEquals(0,result.getAsJsonArray("tasks").size());Assert.assertEquals(4,result.getAsJsonArray("commands").size());
+                if(tiMode.equals("custom-silent")){
+                    Assert.assertEquals("TIMED_OUT",result.get("status").getAsString());Assert.assertTrue(custom.get("error").getAsString().contains("SERIAL_RESPONSE_TIMEOUT"));
+                    Assert.assertTrue(new String(Files.readAllBytes(customFile),StandardCharsets.UTF_8).contains("partial custom output"));
+                }else{
+                    Assert.assertEquals("FAILED",result.get("status").getAsString());Assert.assertTrue(custom.get("error").getAsString().contains("FIXTURE_CUSTOM_COMMAND_WRITE_FAILED"));Assert.assertFalse(Files.exists(customFile));
+                }
+                return;
+            }
+            Assert.assertEquals(!tiMode.equals("custom-unsupported"),custom.get("collected").getAsBoolean());
+            String customText=new String(Files.readAllBytes(customFile),StandardCharsets.UTF_8);
+            if(tiMode.equals("custom-unsupported")){Assert.assertTrue(custom.get("error").getAsString().contains("CUSTOM_COMMAND_UNSUPPORTED"));Assert.assertTrue(customText.contains("unknown symbol"));}
+            else Assert.assertTrue(customText.contains("FIXTURE_CUSTOM_OUTPUT"));
+            JsonObject customOp=null;for(JsonElement item:result.getAsJsonArray("commands"))if(item.getAsJsonObject().get("command").getAsString().equals("fixtureIdentify"))customOp=item.getAsJsonObject();
+            Assert.assertNotNull(customOp);Assert.assertEquals(3000,customOp.get("postPromptCaptureMillis").getAsInt());Assert.assertTrue(customOp.toString(),customOp.get("durationMillis").getAsLong()>=3000);
+            if(tiMode.equals("custom-delayed")){
+                Assert.assertTrue(customText.contains("LATE_CUSTOM_COMMAND_OUTPUT"));
+                Assert.assertFalse(new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-COM7/i-before.txt")),StandardCharsets.UTF_8).contains("LATE_CUSTOM_COMMAND_OUTPUT"));
             }
             if(tiMode.equals("write-failed")){
                 JsonObject task=result.getAsJsonArray("tasks").get(0).getAsJsonObject();Assert.assertFalse(result.get("completed").getAsBoolean());
@@ -179,7 +206,7 @@ public class RemoteExtrasIT {
             }
             Assert.assertTrue(result.toString(),result.get("completed").getAsBoolean());Assert.assertFalse(result.get("success").getAsBoolean());
             Assert.assertEquals(3,result.get("initialTaskCount").getAsInt());Assert.assertEquals(3,result.get("attemptedTaskCount").getAsInt());Assert.assertEquals(1,result.get("tracesWithFrames").getAsInt());
-            boolean validInfo=Arrays.asList("normal","minus-one","unsigned-ones","auto-port","tatl-unsupported","diagnostic-unsupported","tatl-delayed","time-unsupported").contains(tiMode);
+            boolean validInfo=Arrays.asList("normal","minus-one","unsigned-ones","auto-port","custom-unsupported","diagnostic-unsupported","custom-delayed","time-unsupported").contains(tiMode);
             Assert.assertEquals(3,result.get("attemptedTaskInfoCount").getAsInt());Assert.assertEquals(validInfo?2:0,result.get("taskInfosCollected").getAsInt());
             String prefix=wide?"0xffff8000000000":"0x";
             Assert.assertEquals(prefix+"42",result.getAsJsonArray("tasks").get(0).getAsJsonObject().get("taskId").getAsString());
@@ -193,14 +220,14 @@ public class RemoteExtrasIT {
             Assert.assertEquals(!noIdentity,identity.get("collected").getAsBoolean());
             Assert.assertEquals(noIdentity?0:1,identity.getAsJsonArray("addresses").size());
             if(!noIdentity){
-                Assert.assertEquals(wide?"15.30.9.198":"15.30.9.195",identity.getAsJsonArray("addresses").get(0).getAsString());
-                Assert.assertEquals(wide?"00:03:73:08:A1:E2":"00:03:73:77:95:02",identity.getAsJsonArray("macAddresses").get(0).getAsString());
+                Assert.assertEquals(wide?"192.0.2.198":"192.0.2.195",identity.getAsJsonArray("addresses").get(0).getAsString());
+                Assert.assertEquals(wide?"02:00:00:00:00:11":"02:00:00:00:00:22",identity.getAsJsonArray("macAddresses").get(0).getAsString());
             }
             List<String> commands=new ArrayList<>();for(JsonElement item:result.getAsJsonArray("commands"))commands.add(item.getAsJsonObject().get("command").getAsString());
             Assert.assertEquals("version",commands.get(0));Assert.assertEquals("ifconfig",commands.get(1));
             int identityCommands=(wide&&!noIdentity)?1:2;
             if(identityCommands==2)Assert.assertEquals("ifShow",commands.get(2));
-            Assert.assertEquals("TatlYaz",commands.get(identityCommands+1));
+            Assert.assertEquals("fixtureIdentify",commands.get(identityCommands+1));
             int firstList=identityCommands+2;
             Assert.assertEquals("i",commands.get(firstList));
             Assert.assertEquals("tt "+prefix+"42",commands.get(firstList+1));
@@ -260,8 +287,8 @@ public class RemoteExtrasIT {
             }
             script(job.resolve("process-scan.ps1"),"'{\"processes\":[],\"errors\":[],\"elevated\":false}'");script(job.resolve("system-info.ps1"),"'{\"errors\":[]}'");
             if(fakeTimeout){String ping=PowerShell.resource("remote-ping.ps1");Assert.assertTrue(ping.contains("$reply=$state.task.GetAwaiter().GetResult()"));script(job.resolve("remote-ping.ps1"),ping.replace("$reply=$state.task.GetAwaiter().GetResult()","$null=$state.task.GetAwaiter().GetResult();$reply=[pscustomobject]@{Status=[Net.NetworkInformation.IPStatus]::TimedOut;Address=$null}"));}
-            String vx="param($JobRoot,$RequestFile,$PortName)\nif($PortName -eq 'COM7'){throw 'FIXTURE_PORT_BUSY'};$folder=Join-Path $JobRoot ('data/vxworks/ports/port-'+$PortName);[void][IO.Directory]::CreateDirectory($folder);$value=[pscustomobject]@{port=$PortName;identity=@{addresses=@('15.30.9.195');macAddresses=@('00:03:73:77:95:02');collected=$true};success=$true;completed=$true;status='COLLECTED';initialTaskCount=0;attemptedTaskCount=0;tracesWithFrames=0;networkAvailable=$true;tasks=@();commands=@();socketRows=@()};$json=$value|ConvertTo-Json -Depth 5;[IO.File]::WriteAllText((Join-Path $folder 'port-result.json'),$json);$json";
-            vx=vx.replace("$value=[pscustomobject]@{port=$PortName;","[IO.File]::WriteAllText((Join-Path $folder 'TatlYaz.txt'),'FIXTURE_CUSTOM_OUTPUT');$value=[pscustomobject]@{port=$PortName;tatlYaz=@{attempted=$true;collected=$true;artifact=('vxworks/ports/port-'+$PortName+'/TatlYaz.txt');error=$null};");
+            String vx="param($JobRoot,$RequestFile,$PortName)\nif($PortName -eq 'COM7'){throw 'FIXTURE_PORT_BUSY'};$folder=Join-Path $JobRoot ('data/vxworks/ports/port-'+$PortName);[void][IO.Directory]::CreateDirectory($folder);$value=[pscustomobject]@{port=$PortName;identity=@{addresses=@('192.0.2.195');macAddresses=@('02:00:00:00:00:22');collected=$true};success=$true;completed=$true;status='COLLECTED';initialTaskCount=0;attemptedTaskCount=0;tracesWithFrames=0;networkAvailable=$true;tasks=@();commands=@();socketRows=@()};$json=$value|ConvertTo-Json -Depth 5;[IO.File]::WriteAllText((Join-Path $folder 'port-result.json'),$json);$json";
+            vx=vx.replace("$value=[pscustomobject]@{port=$PortName;","[IO.File]::WriteAllText((Join-Path $folder 'custom-command.txt'),'FIXTURE_CUSTOM_OUTPUT');$value=[pscustomobject]@{port=$PortName;customCommand=@{attempted=$true;collected=$true;artifact=('vxworks/ports/port-'+$PortName+'/custom-command.txt');error=$null};");
             script(job.resolve("remote-vxworks.ps1"),vx);
             CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.installationPath=job.toString();c.applicationPath=".";c.resourceMonitoringSeconds=0;c.collectGcStats=false;c.remoteTimeoutSeconds=60;
             c.ping.enabled=true;c.ping.addresses.add("127.0.0.1");c.ping.attempts=2;c.ping.intervalMillis=0;c.vxworks.enabled=true;
@@ -297,9 +324,9 @@ public class RemoteExtrasIT {
                 return;
             }
             JsonArray ports=result.getAsJsonObject("vxworks").getAsJsonArray("ports");Assert.assertEquals(2,ports.size());Assert.assertFalse(ports.get(0).getAsJsonObject().get("success").getAsBoolean());Assert.assertTrue(ports.get(1).getAsJsonObject().get("success").getAsBoolean());
-            Assert.assertEquals("15.30.9.195",ports.get(1).getAsJsonObject().getAsJsonObject("identity").getAsJsonArray("addresses").get(0).getAsString());
-            JsonObject tatl=ports.get(1).getAsJsonObject().getAsJsonObject("tatlYaz");Assert.assertTrue(tatl.get("collected").getAsBoolean());
-            Assert.assertEquals("FIXTURE_CUSTOM_OUTPUT",new String(Files.readAllBytes(job.resolve("data").resolve(tatl.get("artifact").getAsString())),StandardCharsets.UTF_8));
+            Assert.assertEquals("192.0.2.195",ports.get(1).getAsJsonObject().getAsJsonObject("identity").getAsJsonArray("addresses").get(0).getAsString());
+            JsonObject custom=ports.get(1).getAsJsonObject().getAsJsonObject("customCommand");Assert.assertTrue(custom.get("collected").getAsBoolean());
+            Assert.assertEquals("FIXTURE_CUSTOM_OUTPUT",new String(Files.readAllBytes(job.resolve("data").resolve(custom.get("artifact").getAsString())),StandardCharsets.UTF_8));
             Assert.assertEquals(3,result.getAsJsonArray("operations").size());Assert.assertTrue(Files.isRegularFile(job.resolve("data/ping/results.csv")));Assert.assertTrue(Files.isRegularFile(job.resolve("data/vxworks/ports/port-COM9/port-result.json")));
             for(JsonElement item:result.getAsJsonArray("files")){JsonObject file=item.getAsJsonObject();Assert.assertEquals(file.get("sha256").getAsString().toLowerCase(Locale.ROOT),FileSupport.sha256(job.resolve("data").resolve(file.get("path").getAsString())));}
         }finally{FileSupport.deleteTree(job);}

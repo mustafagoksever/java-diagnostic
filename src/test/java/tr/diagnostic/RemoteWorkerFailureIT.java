@@ -8,6 +8,22 @@ import java.util.*;
 
 /** Real Windows worker/child processes; no network or remote credentials. */
 public class RemoteWorkerFailureIT {
+    @Test public void missingRootIsRejectedBeforeDiscoveryWhenTheRequestBypassesTheClient() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows()); Path job=job();
+        try {
+            Path marker=job.resolve("discovery-started.txt");
+            write(job.resolve("process-scan.ps1"),"[IO.File]::WriteAllText('"+marker.toString().replace("'","''")+"','unexpected')");
+            CollectorConfiguration c=config(job);
+            CollectorConfiguration.LogDirectory log=new CollectorConfiguration.LogDirectory();log.sourcePath="Log";log.base="application";c.logs.add(log);
+            JsonObject request;
+            try(RemoteConnection connection=connection()){request=new RemoteCollectionOrchestrator(c).settings("collect",null,connection);}
+            request.addProperty("installationDirectory","");request.addProperty("applicationDirectory","auto");
+            JsonObject result=execute(job,request);
+            Assert.assertFalse("Discovery must not start for an invalid root",Files.exists(marker));
+            Assert.assertTrue(result.get("discovery").isJsonNull());
+            Assert.assertTrue(result.toString(),result.getAsJsonArray("errors").toString().contains("REMOTE_ROOT_REQUIRED"));
+        } finally {if(Files.exists(job))FileSupport.deleteTree(job);}
+    }
     @Test public void workerAcceptsOnlyCOrDTempJobRoots() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());Path local=Files.createTempDirectory("diagnostic-worker-root-");
         try {

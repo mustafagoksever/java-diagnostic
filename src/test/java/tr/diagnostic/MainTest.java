@@ -8,8 +8,11 @@ public class MainTest {
         Assert.assertNull(Main.Arguments.parse(new String[0]).config);
         CollectorConfiguration config = new ConfigurationManager().loadEmbedded();
         Assert.assertEquals("remote", config.mode);
-        Assert.assertEquals(java.nio.file.Paths.get("C:/aselsan").toAbsolutePath().normalize(), config.outputDirectory);
-        Assert.assertEquals(15, config.logs.size());
+        CollectorConfiguration source = new ConfigurationManager().load(java.nio.file.Paths.get("config.yaml"));
+        Assert.assertEquals(source.outputDirectory, config.outputDirectory);
+        Assert.assertEquals(source.remoteHost, config.remoteHost);
+        Assert.assertEquals(source.logs.size(), config.logs.size());
+        Assert.assertTrue("Embedded ZIP setting matches YAML", Arrays.equals(source.zipPasswordCopy(), config.zipPasswordCopy()));
     }
     @Test public void adminFlagOpensOnlyTheDetailedGui() {
         Assert.assertFalse(Main.Arguments.parse(new String[0]).admin);

@@ -15,7 +15,7 @@ public final class LogCollector {
         int index = 0;
         for (CollectorConfiguration.LogDirectory spec : config.logs) {
             Path root = spec.path.toAbsolutePath().normalize();
-            // If reports are written ABOVE the application (C:/aselsan), excluding
+            // If reports are written ABOVE the application, excluding
             // the whole output tree would also exclude every application log.
             Path outputRoot = reportDirectory.startsWith(root) && !reportDirectory.equals(root)
                 ? reportDirectory : staging.toAbsolutePath().normalize();

@@ -12,7 +12,7 @@ public class FailureReportWriterTest {
 
     @Test public void preservesCauseAndSuppressedErrorsWhileRemovingCredentials() throws Exception {
         String user = "DOMAIN\\session-user", secret = "session-user\\\"secret";
-        char[] archive = ReportPassword.defaultPassword();
+        char[] archive = ZipEncryptionService.generatePassword();
         try {
             IOException error = new IOException("ZIP failed " + new String(archive), new IOException("WMI failed for " + user));
             error.addSuppressed(new IOException("helper password=" + secret + "; JSON=" + new com.google.gson.Gson().toJson(secret)));

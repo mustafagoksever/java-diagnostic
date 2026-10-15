@@ -18,9 +18,9 @@ public class RemotePingIT {
         Path job=Paths.get("C:/Temp","diagnostic-remote-"+UUID.randomUUID());Files.createDirectories(job);FileSupport.restrictDirectory(job);
         try {
             Path yaml=job.resolve("config.yaml");
-            Files.write(yaml,("remote: {ping: {enabled: true, subnet: '15.30.9.0/"+(mode.equals("subnet")?24:30)+"', parallelism: "+parallelism+", attempts: "+attempts+", intervalMillis: "+interval+"}}\n").getBytes(StandardCharsets.UTF_8));
+            Files.write(yaml,("remote: {ping: {enabled: true, subnet: '192.0.2.0/"+(mode.equals("subnet")?24:30)+"', parallelism: "+parallelism+", attempts: "+attempts+", intervalMillis: "+interval+"}}\n").getBytes(StandardCharsets.UTF_8));
             CollectorConfiguration c=new ConfigurationManager().load(yaml);
-            if(mode.equals("cancel")||mode.equals("failures")){c.ping.addresses.clear();for(int n=1;n<=6;n++)c.ping.addresses.add("15.30.9."+n);}
+            if(mode.equals("cancel")||mode.equals("failures")){c.ping.addresses.clear();for(int n=1;n<=6;n++)c.ping.addresses.add("192.0.2."+n);}
             try(RemoteConnection connection=new RemoteConnection("localhost","fixture\\user","C:/missing-jdk","unused-test-secret".toCharArray())) {
                 DiagnosticReportGenerator.writeJson(job.resolve("request.json"),new RemoteCollectionOrchestrator(c).settings("collect",Collections.emptySet(),connection));
             }
@@ -63,7 +63,7 @@ public class RemotePingIT {
             }
             if(mode.equals("subnet")) {
                 Assert.assertEquals(16,stats.get("maximum").getAsInt());Assert.assertEquals(254,stats.get("created").getAsInt());
-                JsonArray rows=result.getAsJsonArray("results");Assert.assertEquals("15.30.9.1",rows.get(0).getAsJsonObject().get("address").getAsString());Assert.assertEquals("15.30.9.254",rows.get(253).getAsJsonObject().get("address").getAsString());
+                JsonArray rows=result.getAsJsonArray("results");Assert.assertEquals("192.0.2.1",rows.get(0).getAsJsonObject().get("address").getAsString());Assert.assertEquals("192.0.2.254",rows.get(253).getAsJsonObject().get("address").getAsString());
                 Assert.assertTrue(result.toString(),result.get("durationMillis").getAsLong()<12000);
             }
             if(mode.equals("interval")) {

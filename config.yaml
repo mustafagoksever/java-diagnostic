@@ -6,8 +6,12 @@
 # Genel örnekler için yanındaki config.example.yaml dosyasına bakın.
 
 # mode: remote=uzak sunucu (varsayılan), local=bu bilgisayar.
-# Swing'deki mod seçimiyle oturumluk değiştirebilirsiniz; CLI: --local/--remote.
+# Admin ekranından oturumluk değiştirilebilir; CLI: --local/--remote.
 mode: remote
+
+# ZIP parolası yalnız burada tanımlıdır; sunucu giriş parolasından ayrıdır.
+# Gömülü config JAR içinden çıkarılabilir. Değeri log/manifest içine yazılmaz.
+zipPassword: 'Aselsan123Radar'
 
 # remote: sunucu bağlantısı. Mevcut WMI/DCOM ve SMB erişimleri kullanılır.
 # Sunucuya servis/ajan/JAR kurulmaz; kendi geçici script/çıktıları temizlenir.
@@ -62,7 +66,7 @@ remote:
   # i listesindeki her TASKID için tt 0xTASKID ve ti 0xTASKID denenir.
   # IP/MAC sorgusundan sonra, i listesinden önce TatlYaz bir kez gönderilir.
   # TatlYaz istemi döndükten sonra 3 saniye daha okunur; geç gelen çıktı aynı dosyaya yazılır.
-  # Çıktı: vxworks/ports/port-COM*/TatlYaz.txt; desteklenmezse hata kaydedilip devam edilir.
+  # Çıktı: vxworks/ports/port-COM*/custom-command.txt; desteklenmezse hata kaydedilip devam edilir.
   # tt=stack trace; ti=task/stack/register ayrıntısı. Kernel korumaları aşılmaz.
   # Native trace/soket desteği yoksa neden kaydedilir ve rapor PARTIAL olabilir.
   # Ek sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'larda tw 0xTASKID.
@@ -82,10 +86,12 @@ remote:
     flowControl: None                       # Bu sürümde yalnız None desteklenir.
     portTimeoutSeconds: 180                 # Bir portun tüm işlemleri, 15–600 s.
     commandTimeoutSeconds: 10               # Tek komut/istem, 1–60 s; port limitinden kısa.
+    customCommand: 'TatlYaz'                  # Cihaza özel komut simgesi; boş metin kapatır.
+    customCommandDelaySeconds: 3              # İlk istemden sonra ek okuma, 0–10 saniye.
     maxOutputMb: 8                          # Bir portun konsol çıktı sınırı, 1–64 MiB.
 
 # installationDirectory: kurulum kökü; gomulu bu kökün altındadır.
-# Göreli yol bu YAML'ın klasörüne göredir. Örnek: 'D:/AresKurulum'.
+# Uzak modda sunucudaki mutlak sürücü yolu gerekir. Yerel modda göreli yol YAML klasörüne göredir.
 installationDirectory: 'C:/aselsan/ares2n'
 
 # applicationDirectory: plugins ve Log klasörlerinin bulunduğu uygulama kökü.

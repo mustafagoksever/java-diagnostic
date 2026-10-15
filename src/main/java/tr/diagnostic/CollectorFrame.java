@@ -142,8 +142,13 @@ public final class CollectorFrame extends JFrame {
     }
     private void startCollection() {
         final RemoteConnection remote;
-        try { remote = connection(); } catch (Exception e) { failure(e,"Rapor oluşturma"); return; }
-        final char[] password = ReportPassword.defaultPassword();
+        try {
+            if (mode.getSelectedIndex() == 0) ConfigurationManager.validateRemoteSources(config);
+            remote = connection();
+        } catch (Exception e) { failure(e,"Rapor oluşturma"); return; }
+        final char[] password;
+        try { password = ReportPassword.configured(config); }
+        catch (Exception e) { if (remote != null) remote.close(); failure(e,"Rapor oluşturma"); return; }
         busy(true); append("Tanılama raporu hazırlanıyor...");
         new SwingWorker<CollectionOrchestrator.Result, String>() {
             @Override protected CollectionOrchestrator.Result doInBackground() throws Exception {
@@ -183,7 +188,7 @@ public final class CollectorFrame extends JFrame {
     private void failure(Exception e, String operation) {
         Throwable cause = e instanceof ExecutionException ? e.getCause() : e;
         final char[] serverSecret = serverPassword.getPassword();
-        final char[] archiveSecret = ReportPassword.defaultPassword();
+        final char[] archiveSecret = config.zipPasswordCopy();
         final String user = username.getText();
         busy(true); append("İşlem tamamlanamadı; hata kaydı hazırlanıyor...");
         new SwingWorker<java.nio.file.Path, Void>() {

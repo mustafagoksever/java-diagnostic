@@ -79,7 +79,7 @@ function Collect-RemoteExtraDiagnostics {
                 $folder=Join-Path $dataRoot ('vxworks\ports\port-'+$port)
                 if(Test-Path -LiteralPath $folder -PathType Container){Write-Json (Join-Path $folder 'helper-failure.json') $probe}
             }
-            $vx.ports+=,[pscustomobject]@{port=$port;success=[bool]$probe.success;completed=[bool]$probe.completed;status=$probe.status;identity=$probe.identity;tatlYaz=$probe.tatlYaz;initialTaskCount=[int]$probe.initialTaskCount;attemptedTaskCount=[int]$probe.attemptedTaskCount;tracesWithFrames=[int]$probe.tracesWithFrames;attemptedTaskInfoCount=[int]$probe.attemptedTaskInfoCount;taskInfosCollected=[int]$probe.taskInfosCollected;networkAvailable=[bool]$probe.networkAvailable;artifact=$artifact;error=$probe.error}
+            $vx.ports+=,[pscustomobject]@{port=$port;success=[bool]$probe.success;completed=[bool]$probe.completed;status=$probe.status;identity=$probe.identity;customCommand=$probe.customCommand;initialTaskCount=[int]$probe.initialTaskCount;attemptedTaskCount=[int]$probe.attemptedTaskCount;tracesWithFrames=[int]$probe.tracesWithFrames;attemptedTaskInfoCount=[int]$probe.attemptedTaskInfoCount;taskInfosCollected=[int]$probe.taskInfosCollected;networkAvailable=[bool]$probe.networkAvailable;artifact=$artifact;error=$probe.error}
             if(!$probe.success){$vx.success=$false}
             $vx.ports[-1]|Add-Member -NotePropertyName versionConfirmed -NotePropertyValue ([bool]$probe.versionConfirmed)
             $vx.ports[-1]|Add-Member -NotePropertyName diagnosticAttemptedCount -NotePropertyValue (@($probe.diagnostics|Where-Object{$null -ne $_}).Count)

@@ -92,7 +92,7 @@ function Collect-WindowsDiagnostics {
     $summary.Add('Bu komutlar baglanilan Windows sunucusunda calistirildi. Ham yerel komut ciktilari Windows OEM kodlamasindadir; JSON UTF-8 kullanir.')
     $summary.Add('CPU/RAM: ../sunucu-kaynak-kullanimi.txt ve ../kaynak-izleme-ozeti.txt; disk: ../disk-bilgileri.txt')
     $summary.Add('Olaylar: diagnostics/events.json (alinabilen kayitlar); kanal bazinda events-system.json ve events-application.json. Bos liste hata olmadiginda [] olarak yazilir; erisim hatalari asagida ve manifestte bulunur.')
-    $summary.Add('VxWorks tt/ti/checkStack/TatlYaz komutlarinin Windows icin birebir karsiligi yoktur. Java thread dump dosyalari ../jvms altindadir.')
+    $summary.Add('VxWorks tt/ti/checkStack ve uygulamaya ozel komutlarin Windows icin birebir karsiligi yoktur. Java thread dump dosyalari ../jvms altindadir.')
     foreach($op in @($result.operations|Where-Object{$_.type -like 'windows-*'})){$summary.Add(($op.type+' | '+$(if($op.success){'OK'}else{'FAILED: '+$op.error})+' | '+$op.artifact))}
     [IO.File]::WriteAllLines((Join-Path $dataRoot 'server/SONUC.txt'),$summary.ToArray(),(New-Object Text.UTF8Encoding($false)))
     }

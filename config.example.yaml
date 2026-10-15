@@ -2,30 +2,32 @@
 # Çalıştırma: java -jar java-diagnostic-collector.jar gui --config config.example.yaml
 # Örnek yolları sunucudaki gerçek yollarla değiştirin.
 
+# zipPassword: ZIP için en az 12 karakter. Bu örneğe gerçek parola koymayın.
+# GUI kullanımı öncesi burada tanımlayın; CLI --generate-password/--password-env de desteklenir.
 mode: remote                  # local seçerseniz bu bilgisayarda toplar.
 remote:
   # Sunucuda salt okunur ağ/süreç/servis/sürücü/oturum/saat ve olay sorguları.
   # ZIP içinde server/SONUC.txt sonuçları gösterir. Listeleme bunları çalıştırmaz.
   windowsDiagnostics: true
-  host: '15.30.9.176'
+  host: '192.0.2.176'
   jdkHome: auto                # Sunucudaki uygun JDK'yı otomatik seçer; sabit yol da aday olarak verilebilir.
   timeoutSeconds: 1800
   workShare: auto              # C:/Temp; kullanılamazsa D:/Temp (en az 320 MiB).
-  beforeLogCopyBatch: 'Log/kaydal.bat' # Sunucuda, uygulama köküne göre; '' kapatır.
+  beforeLogCopyBatch: 'Log/collect-logs.bat' # Sunucuda, uygulama köküne göre; '' kapatır.
   beforeLogCopyTimeoutSeconds: 120    # Bitmeden log kopyalama başlamaz.
   beforeLogCopyDelaySeconds: 30       # BAT bittikten sonra 30 saniye bekle.
   # Kapalı örnek; enabled: true ile yalnız uzak collect sırasında etkinleşir.
   ping:
     enabled: false
-    subnet: '15.30.9.0/24'            # Sunucudan .1–.254 taranır; /24–/30 ağ adresi. Ağ/broadcast hariç.
-    addresses: []                    # Ek hedefler; örnek: ['15.30.10.20']. Toplam en çok 512 IP, tekrarlar çıkarılır.
-    # Yalnız liste örneği: subnet satırını kaldırıp addresses: ['15.30.9.176', '15.30.9.198'] yazın.
+    subnet: '192.0.2.0/24'            # Sunucudan .1–.254 taranır; /24–/30 ağ adresi. Ağ/broadcast hariç.
+    addresses: []                    # Ek hedefler; örnek: ['198.51.100.20']. Toplam en çok 512 IP, tekrarlar çıkarılır.
+    # Yalnız liste örneği: subnet satırını kaldırıp addresses: ['192.0.2.176', '192.0.2.198'] yazın.
     parallelism: 16                   # Aynı anda 1–32 IP'ye ICMP; TCP port taraması yapmaz.
     attempts: 1                      # Her adres için 1–10 ICMP isteği; 1 hızlı keşif, 4 paket kaybı takibi.
     timeoutMillis: 1000               # Tek istek için 100–5000 ms.
     intervalMillis: 0                 # Aynı IP'de istekler arasında 0–1000 ms.
   vxworks:
-    # Açıldığında IP/MAC sorgusundan sonra TatlYaz, ardından i/tt/ti ve ağ bilgileri alınır.
+    # Açıldığında IP/MAC sorgusundan sonra özel komut (ayarlanmışsa), ardından i/tt/ti ve ağ bilgileri alınır.
     # Önce version ile doğrulanır. Ek sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'larda tw.
     enabled: false
     autoDiscoverPorts: true          # Sunucudaki COM portlarını otomatik bulur.
@@ -37,9 +39,13 @@ remote:
     flowControl: None                # Yalnız None; DTR/RTS daima kapalı.
     portTimeoutSeconds: 180          # Port başına 15–600 saniye.
     commandTimeoutSeconds: 10        # Tek komut 1–60 saniye, port limitinden kısa.
+    customCommand: ''                # Opsiyonel, uygulamaya özel tek bir simge adı; boş metin kapatır.
+    customCommandDelaySeconds: 3      # İstemden sonra ek okuma, 0–10 saniye.
     maxOutputMb: 8                   # Port başına konsol çıktısı 1–64 MiB.
 
 # Kurulum ve plugins/Log köklerini ayrı verebilirsiniz; burada plugins köktedir.
+# Uzak modda kurulum kökü mutlak sürücü yoludur; eksik kök göreli log/BAT varsa reddedilir.
+# Yalnız mutlak log kaynakları veya JVM tanılaması için kurulum kökü verilmeyebilir.
 installationDirectory: 'C:/OrnekUygulama'
 applicationDirectory: '.'
 
@@ -93,4 +99,4 @@ logs:
 
 # Hiç log toplamayacaksanız yukarıdaki logs listesinin yerine logs: [] yazın.
 # Kaynakların eksik olması manifestte hata oluşturur; validate-config yalnız
-# şemayı ve yolların çözümünü doğrular. Parolayı bu dosyaya yazmayın.
+# şemayı ve yolların çözümünü doğrular. Sunucu parolasını bu dosyaya yazmayın.

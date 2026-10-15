@@ -24,8 +24,8 @@ try{
     $item=Get-Item -LiteralPath $batch -Force
     if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'BAT must be a regular file'}
     $outDir=Join-Path $jobRoot 'data\pre-log';[void][IO.Directory]::CreateDirectory($outDir)
-    $output=[IO.File]::Open((Join-Path $outDir 'kaydal.stdout.txt'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
-    $errorOutput=[IO.File]::Open((Join-Path $outDir 'kaydal.stderr.txt'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+    $output=[IO.File]::Open((Join-Path $outDir 'batch.stdout.txt'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+    $errorOutput=[IO.File]::Open((Join-Path $outDir 'batch.stderr.txt'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
     $start=New-Object Diagnostics.ProcessStartInfo;$start.FileName=Join-Path $env:SystemRoot 'System32\cmd.exe';$start.WorkingDirectory=Split-Path $batch -Parent
     $start.Arguments='/d /s /c "call "'+[IO.Path]::GetFileName($batch)+'""'
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true

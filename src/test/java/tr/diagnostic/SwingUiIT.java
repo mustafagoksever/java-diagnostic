@@ -33,6 +33,7 @@ public class SwingUiIT {
     @Test public void normalScreenHasOnlyCredentialsAndReportActions() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows()); Assume.assumeFalse(GraphicsEnvironment.isHeadless());
         CollectorConfiguration config = new CollectorConfiguration(); config.outputDirectory = Paths.get("reports").toAbsolutePath();
+        config.remoteHost = "fixture-server";
         SwingUtilities.invokeAndWait(() -> {
             CollectorFrame frame = new CollectorFrame(config);
             try {
@@ -137,6 +138,8 @@ public class SwingUiIT {
         Path root = Files.createTempDirectory("diagnostic-failure-ui-");
         CollectorConfiguration config = new CollectorConfiguration();
         config.outputDirectory = root.resolve("output-is-a-file"); Files.write(config.outputDirectory, new byte[]{1});
+        config.remoteHost = "fixture-server";
+        config.setZipPassword("fixture-archive-password");
         java.util.concurrent.CountDownLatch writing = new java.util.concurrent.CountDownLatch(1), release = new java.util.concurrent.CountDownLatch(1);
         AtomicReference<Path> record = new AtomicReference<>();
         AtomicReference<CollectorFrame> ref = new AtomicReference<>();

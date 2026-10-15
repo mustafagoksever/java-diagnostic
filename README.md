@@ -28,9 +28,9 @@ Sunucudaki geçici çalışma alanı önce `C:/Temp/diagnostic-remote-<UUID>` ol
 
 Başarı ve hata durumlarında yalnız collector'ın kendi geçici iş klasörü temizlenir. Başlatılmış işe önce iptal sinyali gönderilir; istemci bağlantı sinyali 90 saniye kesilirse worker kendi yardımcılarını durdurup kendi klasörünü temizlemeyi dener. Sunucu diskinde 256 MiB boş alan korunur. Güç kesintisi, zorla süreç sonlandırma veya silme yetkisi/bağlantı kaybı mutlak temizlik garantisini engelleyebilir; ayrıntılar [hatalar ve temizlik](docs/remote-mode.md#hatalar-ve-temizlik) bölümündedir.
 
-Gömülü ayarlarla uzak rapor oluşturulurken **loglar kopyalanmadan önce sunucudaki `<uygulama kökü>/Log/kaydal.bat` çağrılır**. BAT'ın çalışma klasörü kendi Log klasörüdür; 120 saniye içinde exit code 0 ile tamamlanması beklenir. Başarıdan sonra **30 saniye beklenir**, ardından loglar kopyalanır. Yoksa/hata verirse/timeout olursa loglar kopyalanmaz; mevcut dump ve sistem verileri PARTIAL raporlanır. Sonuç `Manifest.json` içindeki `operations` alanına, konsol çıktıları `pre-log/kaydal.stdout.txt` ve `pre-log/kaydal.stderr.txt` dosyalarına yazılır. Yerel modda ve Java süreçlerini listelemede çalışmaz. Collector logları salt okunur kopyalar; bu açıkça istenen BAT kendi içeriğine göre kaynak dosyalarını değiştirebilir. [BAT ayarları ve çalışma şartları](docs/remote-mode.md#log-kopyalama-öncesi-kaydalbat).
+Uzak rapor sırasında loglar kopyalanmadan önce `remote.beforeLogCopyBatch` ile seçilen sunucu BAT dosyası çağrılır. BAT yolu ve timeout/bekleme süreleri yalnız config içindedir. Çıkış kodu sıfırsa yapılandırılan süre beklenir; hata/timeout varsa log kopyalama atlanır ve mevcut tanılama verileri PARTIAL raporlanır. Sonuç `Manifest.json/operations`, konsol çıktıları `pre-log/batch.stdout.txt` ve `pre-log/batch.stderr.txt` içindedir. Yerel mod ve süreç listeleme BAT çalıştırmaz. [BAT açıklaması](docs/remote-mode.md#log-kopyalama-öncesi-bat).
 
-**Gerçek kaydal.bat için kullanıcı oturumu:** BAT'ın `nircmd win`/`sendkeypress` komutları açık, kilitsiz bir Windows/RDP masaüstü gerektirir. Collector aynı hesapla çalışan OSGi/Java süreçlerinden tek bir oturum seçer; Windows'un mevcut Görev Zamanlayıcısında yalnız bu iş için `InteractiveToken` görevi oluşturur ve sunucudaki BAT'ı o oturumda çağırır. Parola göreve kaydedilmez. Görev ve yardımcı çıktı kimlikleri doğrulanır, görev tamamlanma/hata/iptalde temizlenir. Sunucuya servis/ajan kurulmaz; geçici görev oluşturma izni ve çalışan Görev Zamanlayıcısı gerekir. Oturum bulunamazsa, birden fazla uygun oturum varsa veya yetki yoksa neden kaydedilir ve loglar atlanır. BAT'ın çıkış kodu ve 30 saniyelik bekleme, NirCmd'nin hedef pencerede bütün dışa aktarma işini tamamladığının bağımsız doğrulaması değildir.
+**Etkileşimli BAT için kullanıcı oturumu:** BAT'ın `nircmd win`/`sendkeypress` komutları açık, kilitsiz bir Windows/RDP masaüstü gerektirir. Collector aynı hesapla çalışan OSGi/Java süreçlerinden tek bir oturum seçer; Windows'un mevcut Görev Zamanlayıcısında yalnız bu iş için `InteractiveToken` görevi oluşturur ve sunucudaki BAT'ı o oturumda çağırır. Parola göreve kaydedilmez. Görev ve yardımcı çıktı kimlikleri doğrulanır, görev tamamlanma/hata/iptalde temizlenir. Sunucuya servis/ajan kurulmaz; geçici görev oluşturma izni ve çalışan Görev Zamanlayıcısı gerekir. Oturum bulunamazsa, birden fazla uygun oturum varsa veya yetki yoksa neden kaydedilir ve loglar atlanır. BAT'ın çıkış kodu ve 30 saniyelik bekleme, NirCmd'nin hedef pencerede bütün dışa aktarma işini tamamladığının bağımsız doğrulaması değildir.
 
 Thread dump özetindeki **EKRAN THREAD BULGULARI**, desteklenen Swing/SWT/JavaFX ekran thread'lerinde ağ çağrısını ayrıca gösterir. `NETWORK_ON_UI` bulgusu değişen socket/kilit adreslerinden bağımsız olarak aynı ağ yönteminin kaç örnekte görüldüğünü ve ekran thread'inin kilitlerini bekleyen thread'leri kaydeder. Modal diyaloglar yalnız bağlam bilgisi olarak belirtilir; normal olay beklemesi donma diye işaretlenmez. Bu sınırlı kalıpların bulunmaması veya deadlock sayısının sıfır olması arayüzün sağlıklı olduğunu kanıtlamaz.
 
@@ -45,7 +45,9 @@ java -jar target\java-diagnostic-collector.jar list-java --local
 java -jar target\java-diagnostic-collector.jar
 ```
 
-Kaynak projedeki `config.yaml`, iki fotoğraftaki 14 kaynağa ve **`C:/aselsan/ares2n`** kurulum köküne göre düzenlendi. Maven bu dosyayı JAR'ın `internal/config.yaml` kaynağına gömer; ayar değişikliği için JAR'ı yeniden derleyin. Raporlar **collector'ın çalıştığı bilgisayardaki `C:/aselsan`** klasörüne yazılır; klasöre yazma izni gereklidir. Uzak modda kaynak yolları ve `applicationDirectory: auto` **sunucuda** çözülür. `validate-config` şemayı kontrol eder, sunucu bağlantısını doğrulamaz. Eksik kaynaklar manifestte kaydedilir.
+Ortama özel sunucu adresi, kurulum/uygulama yolları, log kaynakları, BAT/özel cihaz komutu ve ZIP parolası yalnız `config.yaml` içindedir. Java/PowerShell kaynaklarında gerçek ortam varsayılanları bulunmaz. Maven bu dosyayı `internal/config.yaml` olarak gömer; tek JAR dağıtımı korunur. Eksik ZIP parolası sabit bir parolaya dönmez; CLI parola seçenekleri veya YAML ayarı gerekir. Sunucu kullanıcı adı/parolası ekrandan girilir. `--config` açık ayar dosyası seçer; varsayılan açılış yan dosya aramaz.
+
+Uzak log/BAT toplamadan önce kaynak kökleri doğrulanır. Göreli `config`/`installation` kaynakları için sunucuda mutlak bir `installationDirectory` gerekir; `application` kaynakları ve hazırlık BAT dosyası için mutlak `applicationDirectory` de yeterlidir. Eksik kök, `.`, sürücüye göre göreli veya belirsiz kök yolları sunucuya bağlanmadan reddedilir. Yalnız JVM tanılaması, süreç listeleme ve mutlak sunucu log yolları kurulum kökü olmadan kullanılabilir. Yerel modda YAML klasörüne göre göreli yollar desteklenmeye devam eder; `validate-config` seçilen `--local`/`--remote` moduna göre denetler.
 
 `target/java-diagnostic-collector.jar` bütün çalışma bağımlılıklarını içeren tek JAR'dır. Offline bilgisayara yalnız JAR'ı kopyalayın. `Baslat.bat` ve `scripts` Java 8 seçimi/UAC için isteğe bağlı başlatıcılardır. İlk Maven derlemesi bağımlılık indirmek için ağ gerektirir; cache hazırsa `mvn -o verify` kullanılabilir. Yerel JDK ve kurumsal CA'lar dağıtım JAR'ına dahil edilmez.
 
@@ -81,9 +83,9 @@ java -jar target\java-diagnostic-collector.jar validate-config
 java -jar target\java-diagnostic-collector.jar --help
 ```
 
-GUI ve varsayılan CLI akışı `ReportPassword` sınıfına gömülen sabit **ZIP parolasını** otomatik kullanır. ZIP parola penceresi açılmaz; uzak sunucu giriş parolası bundan ayrıdır ve oturumluk girilir. Sabit ZIP parolası arayüz, stdout/stderr, YAML veya manifest içine yazılmaz. Kod/JAR içindeki sabit parola decompile edilerek çıkarılabilir; gerçek bir gizli anahtar saklama mekanizması değildir. Varsayılan ZIP parolası bu dokümanda tekrarlanmaz.
+GUI ve varsayılan CLI, YAML içindeki `zipPassword` değerini kullanır; Java sınıflarında sabit parola yoktur. En az 12 karakter gerekir. Sunucu giriş parolası bundan ayrıdır ve ekrandan/konsoldan oturumluk girilir. ZIP parolası arayüze, stdout/stderr, rapora veya manifest içine yazılmaz; sunucuya gönderilmez. Ayar eksikse CLI için `--password-env` veya `--generate-password` kullanılabilir. YAML ve gömülü YAML okunabildiğinden bu değer kriptografik bir sır kasasında tutulmuş sayılmaz.
 
-CLI'de `--password-env` ile farklı parola veya `--generate-password` ile güvenli rastgele parola kullanılabilir. `--generate-password` açıkça seçilirse üretilen parola stderr'e yazılır; çıktısını kaydedin. Ortam değişkeni, çalıştıran kullanıcının ortam güvenliğine bağlıdır. Parolayı ZIP'ten ayrı iletin. İşlem sonunda collector'ın `char[]` parola tamponu temizlenir; sabit kod ve ortam değişkenlerindeki tüm bellek kopyalarının silinmesi garanti edilemez.
+CLI'de `--password-env` ile farklı parola veya `--generate-password` ile güvenli rastgele parola kullanılabilir. `--generate-password` açıkça seçilirse üretilen parola stderr'e yazılır; çıktısını kaydedin. Ortam değişkeni, çalıştıran kullanıcının ortam güvenliğine bağlıdır. Parolayı ZIP'ten ayrı iletin. İşlem sonunda collector'ın `char[]` parola tamponu temizlenir; YAML/string ve ortam değişkenlerindeki tüm bellek kopyalarının silinmesi garanti edilemez.
 
 Çıkış kodları:
 
@@ -104,13 +106,13 @@ CLI stdout/stderr UTF-8 kullanır. Eski Windows konsolunda Türkçe karakterler 
 
 ZIP içindeki `ping/SONUC.txt` IP erişim özetini; `vxworks/SONUC.txt`, `vxworks/task-listesi.csv` ve `vxworks/socket-port-listesi.csv` COM/cihaz IP/task/socket eşlemesini gösterir. VxWorks'te önce `ifconfig`, gerekirse `ifShow` ile IP/MAC bilgisi okunur; ardından `i`, her task için `tt 0xTASKID` ve `ti 0xTASKID`, sonra tekrar `i` alınır. `ti` task/stack/register ayrıntısını verir; sonucu trace'den ayrı kaydedilir ve özette alınan/denenen sayısı görünür. Ağ/bellek/NFS komutları bundan sonra çalışır. Her portun ham konsolu, komut çıktıları ve task izleri `vxworks/ports/port-COM*/` altındadır. Meşgul/sessiz port, alınamayan stack/task ayrıntısı ve desteklenmeyen socket bilgisi manifestte kaydedilir; mevcut Java/log verileriyle PARTIAL rapor hazırlanır. [Ayarlar ve sınırlamalar](docs/remote-mode.md#sunucudan-ping-ve-vxworks-toplama).
 
-Gömülü `remote.ping.subnet: '15.30.9.0/24'` ayarıyla `.1–.254` arasındaki **254 IP sunucudan** taranır. Aynı anda en fazla 16 hedef, IP başına 1 istek ve 1000 ms zaman aşımı kullanılır. Ağ/broadcast adreslerine ping gönderilmez. Ek IP'ler `addresses` listesine yazılabilir; tekrarlar çıkarılır. Bu ağ taraması 254 ayrı dosya üretmez: `ping/SONUC.txt` yanıt veren/vermeyen sayılarını ve IP sonuçlarını, `results.csv` tabloyu, `results.json` ayrıntıları içerir. Ping cihaz türünü veya VxWorks olduğunu doğrulamaz.
+Config içindeki `remote.ping.subnet` /24 olarak ayarlanırsa `.1–.254` arasındaki **254 IP sunucudan** taranır. Aynı anda en fazla 16 hedef, IP başına 1 istek ve 1000 ms zaman aşımı kullanılır. Ağ/broadcast adreslerine ping gönderilmez. Ek IP'ler `addresses` listesine yazılabilir; tekrarlar çıkarılır. Bu ağ taraması 254 ayrı dosya üretmez: `ping/SONUC.txt` yanıt veren/vermeyen sayılarını ve IP sonuçlarını, `results.csv` tabloyu, `results.json` ayrıntıları içerir. Ping cihaz türünü veya VxWorks olduğunu doğrulamaz.
 
-VxWorks akışında IP/MAC sorgusundan sonra, ilk `i` listesinden önce **`TatlYaz`** bir kez gönderilir. Ham yanıt `vxworks/ports/port-COM*/TatlYaz.txt` dosyasına girer; alınma durumu ve varsa hata mevcut `vxworks/SONUC.txt` ve manifestte görünür. Simge desteklenmiyorsa görev/ağ toplamaya devam edilir; istem dönmezse kısmi çıktı korunur ve o porta yeni komut gönderilmez. Komut cihazın kendi uygulama imajında bulunmalıdır; adı ve harfleri aynen korunur, farklı komut denenmez.
+VxWorks akışında IP/MAC sorgusundan sonra, ilk `i` listesinden önce `remote.vxworks.customCommand` doluysa seçilen komut bir kez gönderilir. Ham yanıt `vxworks/ports/port-COM*/custom-command.txt` dosyasına girer; alınma durumu ve varsa hata mevcut `vxworks/SONUC.txt` ve manifestte görünür. Simge desteklenmiyorsa görev/ağ toplamaya devam edilir; istem dönmezse kısmi çıktı korunur ve o porta yeni komut gönderilmez. Komut cihazın kendi uygulama imajında bulunmalıdır; adı ve harfleri aynen korunur, farklı komut denenmez.
 
-`TatlYaz` yanıtında ilk konsol istemi döndükten sonra **3 saniye daha** seri bağlantı okunur. Geç gelen loglar aynı `TatlYaz.txt` ve ham konsola eklenir; bu bekleme tamamlanmadan `i` veya başka komut gönderilmez. Beklerken iptal ve port/çıktı sınırları kontrol edilir. Hiç istem dönmezse normal komut timeout'u geçerlidir; istem dönerse ek okuma penceresi ve en fazla 500 ms son yanıt payı uygulanır. Portun toplam süre sınırı artırılmaz.
+Config ile seçilen özel komutun ilk konsol istemi döndükten sonra **customCommandDelaySeconds kadar** (varsayılan 3 saniye) seri bağlantı okunur. Geç gelen loglar aynı `custom-command.txt` ve ham konsola eklenir; bu bekleme tamamlanmadan `i` veya başka komut gönderilmez. Beklerken iptal ve port/çıktı sınırları kontrol edilir. Hiç istem dönmezse normal komut timeout'u geçerlidir; istem dönerse ek okuma penceresi ve en fazla 500 ms son yanıt payı uygulanır. Portun toplam süre sınırı artırılmaz.
 
-Konsol isteminden sonra ilk komut artık **`version`** olur; yanıtında VxWorks sürüm başlığı doğrulanmadan IP/TatlYaz/task komutları gönderilmez. Task anlık görüntüleri sonrasında **`time`, `moduleShow`, `checkStack 0`, `taskShow 0,2`, `devs`, `whoami`, `w`** ve ilk listede **PEND durumundaki her task için `tw 0xTASKID`** denenir. `memShow 0` mevcut ağ/bellek adımında tek kez çalışır. Ek yanıtlar portun `diagnostics/` klasöründe (`time.txt`, `moduleShow.txt` dahil), `tw` yanıtları `tasks/tw-0x*.txt` içindedir; komut bazında sonuç mevcut `vxworks/SONUC.txt` dosyasına girer. `.` bağımsız bir tanılama komutu olarak eklenmez. Desteklenmeyen komut kaydedilir; timeout'ta o porta yeni komut gönderilmez. Ek sorgular mevcut süre ve çıktı sınırlarını kullanır.
+Konsol isteminden sonra ilk komut artık **`version`** olur; yanıtında VxWorks sürüm başlığı doğrulanmadan IP/özel komut/task komutları gönderilmez. Task anlık görüntüleri sonrasında **`time`, `moduleShow`, `checkStack 0`, `taskShow 0,2`, `devs`, `whoami`, `w`** ve ilk listede **PEND durumundaki her task için `tw 0xTASKID`** denenir. `memShow 0` mevcut ağ/bellek adımında tek kez çalışır. Ek yanıtlar portun `diagnostics/` klasöründe (`time.txt`, `moduleShow.txt` dahil), `tw` yanıtları `tasks/tw-0x*.txt` içindedir; komut bazında sonuç mevcut `vxworks/SONUC.txt` dosyasına girer. `.` bağımsız bir tanılama komutu olarak eklenmez. Desteklenmeyen komut kaydedilir; timeout'ta o porta yeni komut gönderilmez. Ek sorgular mevcut süre ve çıktı sınırlarını kullanır.
 
 **Logları Temizle** düğmesi ekrandaki işlem günlüğünü ve Java süreçleri tablosunu temizler. Kaynak log dosyalarını veya raporları silmez; devam eden toplama işlemini etkilemez.
 
@@ -145,29 +147,7 @@ YAML birden fazla dizin ve tek dosya kaynağını destekler. `recursive`, küç�
 
 Her kaynak için `base: config` (yerelde YAML klasörü, uzakta kurulum kökü), `installation` veya `application` seçilebilir. `destination` ZIP'in `logs/` bölümündeki hedef alt klasördür; verilmezse `01`, `02` gibi dizinler kullanılır. Aynı hedef dosyaya iki kaynak denk gelirse önceki kopya korunur ve `DESTINATION_COLLISION` kaydedilir. `jdkHomes`, toplama yapılan bilgisayardaki ek JDK köklerini belirtir; uyumluluk sıralaması yine uygulanır.
 
-Fotoğraflardaki kaynakların karşılığı aşağıdadır. Kurulum kökü `C:/aselsan/ares2n`; uygulama kökü otomatik çözülür. Config/XML dosyalarında zaman filtresi yoktur. Log/kayıt/veri kaynakları için **son 48 saat**, her dosya için **100 MiB** sınırı seçildi; bunlar fotoğraftan alınan değerler değil, değiştirilebilir toplama varsayılanlarıdır. Uzantı filtresi kapalıdır; farklı log/kayıt uzantıları da kopyalanır.
-
-| Kök | Kaynak | ZIP içindeki hedef (`logs/` altında) |
-|---|---|---|
-| Kurulum | gomulu/Kimliklendirme/iz | Kimliklendirme/iz |
-| Kurulum | gomulu/Kimliklendirme/config | Kimliklendirme/config |
-| Kurulum | gomulu/Gomulu_Ortak/data | Gomulu_Ortak |
-| Uygulama | plugins/denizEDKA/conf/EDKA_conf.xml | KA/denizEDKA/conf |
-| Uygulama | plugins/RadehModel/conf | KA/RadehModel/conf |
-| Uygulama | plugins/yayinKaydi/kayitlar | KA/yayinKaydi |
-| Kurulum | gomulu/Alkon/log/Kayit | Alkon/log |
-| Kurulum | gomulu/Alkon/config | Alkon/config |
-| Kurulum | gomulu/AlkonAB/config | AlkonAB/config |
-| Kurulum | gomulu/AlkonAB/log | AlkonAB/log |
-| Kurulum | gomulu/SISKI/config | SISKI/config |
-| Kurulum | gomulu/TaktikKayitYKBKurulum/data/kayit | AlkonAB/kayit |
-| Uygulama | plugins/OrtakKutuphane/conf/denized_debug.txt | KA/log |
-| Uygulama | Log | KA/log |
-| Sunucuda mutlak yol | C:/_Kayit/ED/Log | ED/Log |
-
-Fotoğraflardaki 14 kaynağa ek olarak sunucudaki `C:/_Kayit/ED/Log` dizini de toplanır; toplam 15 kaynak vardır. Alt klasörler korunur, son 48 saat/dosya başına 100 MiB filtreleri uygulanır. Bu kaynak yolu collector'ın `C:/aselsan` çıktı klasöründen ayrıdır.
-
-Fotoğraftaki 10 saniyelik bekleme `collectionDelaySeconds: 10` ile uygulanır. Eski `TASI` işlemi kaynakları korumak için kopyalamaya çevrildi. `Log/kaynak.bat` dahil kaynak scriptleri otomatik çalıştırılmaz; varsa dosya olarak kopyalanır.
+Gerçek log kaynakları ve ZIP hedefleri yalnız `config.yaml` içindeki `logs` listesindedir; kurum/uygulama adları bu dokümana kopyalanmaz. `config.example.yaml` genel örnekler içerir. Her kaynak için `base`, `path`, `destination`, `recursive`, `extensions`, `modifiedWithinHours` ve `maxFileSizeMb` ayarlanabilir. Kurulum kökü `installationDirectory`, uygulama kökü `applicationDirectory`, yerel çıktı kökü `outputDirectory` ile seçilir. Kaynak scriptleri sırf log dizininde bulunduğu için çalıştırılmaz; yalnız açık `remote.beforeLogCopyBatch` ayarı çalıştırılır.
 
 NIO kaynakları yalnızca okur. Aktif log dosyasında ilk gözlenen boyut kadar veri kopyalanır; sürekli eklenen dosyanın peşinden gidilmez. Boyut/mtime/file identity değişimi veya kısalma `COPIED_CHANGING_SOURCE` olarak işaretlenir. Aynı boyut ve timestamp ile yeniden yazım tespit edilemeyebilir; log anlık görüntüsü transaction değildir. Windows kilidi/ACL okumayı engellerse dosya `FAILED` olur; VSS veya kilit aşma yapılmaz. Symlink'ler takip edilmez, collector çıktı ağacı taramadan dışlanır. NTFS junction/reparse davranışı sağlayıcıya bağlıdır; çıktı için log dizininden ayrı bir klasör önerilir.
 
@@ -212,9 +192,9 @@ diagnostic-<UTC tarih>-<benzersiz id>.zip
     ...stderr.txt
     ...VM.version...txt
     ...gc-statistics...txt
-  logs/KA/log/...
-  logs/Kimliklendirme/...
-  logs/Alkon/...
+  logs/configured-log/...
+  logs/configured-source-a/...
+  logs/configured-source-b/...
   ...diğer destination dizinleri
 ```
 
@@ -242,7 +222,7 @@ Uzak toplamanın işlem günlüğü WMI ve SMB için ayrı bağlantı sonucu, ge
 | ResourceMonitor | Eş zamanlı süreli CIM/WMI takibi, CSV ve kaynak özeti |
 | ConfigurationManager / CollectorConfiguration | SafeConstructor ile sıkı YAML şeması |
 | ZipEncryptionService | Güvenli parola, AES-256 ve tam içerik doğrulaması |
-| ReportPassword | GUI/CLI için ekrana yazılmayan gömülü varsayılan parola |
+| ReportPassword | GUI/CLI için YAML üzerinden alınan ZIP parolası |
 | DiagnosticReportGenerator | Manifest, dosya envanteri, SHA-256 |
 | CollectionOrchestrator | Uçtan uca toplama ve staging yaşam döngüsü |
 | RemoteCollectionOrchestrator / RemotePowerShellTransport | Sunucu worker'ı, WMI/SMB indirme/doğrulama, yerel analiz/ZIP |

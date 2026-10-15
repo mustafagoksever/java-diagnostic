@@ -13,7 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
-/** Strict, safe YAML schema. Unknown keys (including passwords) are rejected. */
+/** Strict YAML schema. Server credentials remain session-only; ZIP settings come from YAML. */
 public final class ConfigurationManager {
     public CollectorConfiguration load(Path file) throws IOException {
         Path base = file.toAbsolutePath().normalize().getParent();
@@ -40,8 +40,13 @@ public final class ConfigurationManager {
             throw new IOException("YAML okunamadı; biçimi, tekrar eden alanları ve güvenli veri tiplerini kontrol edin.");
         }
         Map<String, Object> root = map(loaded, "config");
-        keys(root, "mode", "remote", "outputDirectory", "commandTimeoutSeconds", "scanTimeoutSeconds", "jdkHomes", "additionalProcessNames", "collectGcStats", "logs", "installationDirectory", "applicationDirectory", "collectionDelaySeconds", "resourceMonitoringSeconds", "resourceSampleIntervalSeconds");
+        keys(root, "mode", "remote", "zipPassword", "outputDirectory", "commandTimeoutSeconds", "scanTimeoutSeconds", "jdkHomes", "additionalProcessNames", "collectGcStats", "logs", "installationDirectory", "applicationDirectory", "collectionDelaySeconds", "resourceMonitoringSeconds", "resourceSampleIntervalSeconds");
         CollectorConfiguration c = new CollectorConfiguration();
+        if (root.containsKey("zipPassword")) {
+            String secret = string(root, "zipPassword", null);
+            if (secret.length() < 12) throw new IOException("zipPassword en az 12 karakter olmalı.");
+            c.setZipPassword(secret);
+        }
         c.mode = string(root, "mode", "remote");
         if (!Arrays.asList("remote", "local").contains(c.mode)) throw new IOException("mode remote veya local olmalı.");
         if (root.containsKey("remote")) {
@@ -66,9 +71,9 @@ public final class ConfigurationManager {
             if (remote.containsKey("ping")) loadPing(map(remote.get("ping"), "remote.ping"), c.ping);
             if (remote.containsKey("vxworks")) loadVxWorks(map(remote.get("vxworks"), "remote.vxworks"), c.vxworks);
         }
-        try { RemoteConnection.validate(c.remoteHost, "configuration-endpoint", c.remoteJdkHome); }
+        try { RemoteConnection.validate(c.remoteHost.isEmpty() ? "configuration-endpoint" : c.remoteHost, "configuration-endpoint", c.remoteJdkHome); }
         catch (IllegalArgumentException e) { throw new IOException(e.getMessage()); }
-        c.installationPath = string(root, "installationDirectory", "C:/aselsan/ares2n");
+        c.installationPath = string(root, "installationDirectory", "");
         c.applicationPath = string(root, "applicationDirectory", "auto");
         c.installationDirectory = root.containsKey("installationDirectory") ? resolve(base, string(root, "installationDirectory", null)) : base;
         String app = string(root, "applicationDirectory", root.containsKey("installationDirectory") ? "auto" : ".");
@@ -124,6 +129,29 @@ public final class ConfigurationManager {
         return c;
     }
 
+    /** Validate after mode overrides, and before any remote collect operation. */
+    static void validateRemoteSources(CollectorConfiguration c) throws IOException {
+        boolean installation = serverDrivePath(c.installationPath);
+        if (c.installationPath != null && !c.installationPath.isEmpty() && !installation)
+            throw new IOException("Uzak installationDirectory, sunucuda sürücü harfiyle başlayan mutlak bir yol olmalı.");
+        boolean application = serverDrivePath(c.applicationPath);
+        if (!application && ambiguousServerPath(c.applicationPath))
+            throw new IOException("Uzak applicationDirectory, auto, kurulum köküne göre göreli veya mutlak bir sürücü yolu olmalı.");
+        if (!c.remoteBeforeLogCopyBatch.isEmpty() && !installation && !application) missingRemoteRoot();
+        for (CollectorConfiguration.LogDirectory log : c.logs) {
+            String source = log.sourcePath == null ? (log.path == null ? null : log.path.toString()) : log.sourcePath;
+            if (source == null || source.trim().isEmpty()) throw new IOException("Uzak log path boş olamaz.");
+            if (serverDrivePath(source)) continue;
+            if (ambiguousServerPath(source)) throw new IOException("Uzak log path, göreli veya mutlak bir sunucu sürücü yolu olmalı.");
+            if (!installation && !("application".equals(log.base) && application)) missingRemoteRoot();
+        }
+    }
+    private static boolean serverDrivePath(String path) { return path != null && path.matches("(?s)[A-Za-z]:[/\\\\].*"); }
+    private static boolean ambiguousServerPath(String path) { return path != null && path.matches("(?s)(?:[A-Za-z]:|[/\\\\]).*"); }
+    private static void missingRemoteRoot() throws IOException {
+        throw new IOException("Göreli uzak log/BAT yolları için sunucudaki mutlak installationDirectory gerekli. Uygulama kaynakları için mutlak applicationDirectory de kullanılabilir.");
+    }
+
     private static void loadPing(Map<String, Object> m, CollectorConfiguration.PingSettings p) throws IOException {
         keys(m, "enabled", "subnet", "addresses", "parallelism", "attempts", "timeoutMillis", "intervalMillis");
         p.enabled = bool(m, "enabled", false);
@@ -139,10 +167,10 @@ public final class ConfigurationManager {
         if (m.containsKey("subnet")) {
             p.subnet = text(m.get("subnet"), "remote.ping.subnet");
             String[] parts = p.subnet.split("/", -1);
-            if (parts.length != 2 || !parts[1].matches("2[4-9]|30")) throw new IOException("Ping subnet sayısal IPv4 ağı ve /24–/30 olmalı; örnek: 15.30.9.0/24.");
+            if (parts.length != 2 || !parts[1].matches("2[4-9]|30")) throw new IOException("Ping subnet sayısal IPv4 ağı ve /24–/30 olmalı.");
             long network = ipv4Number(parts[0]);
             int size = 1 << (32 - Integer.parseInt(parts[1]));
-            if (network % size != 0) throw new IOException("Ping subnet ağ adresi olmalı; örnek: 15.30.9.0/24.");
+            if (network % size != 0) throw new IOException("Ping subnet ağ adresi olmalı.");
             // Exclude the network and broadcast addresses. Expand on the client;
             // the server receives only validated, explicit numeric targets.
             for (long host = network + 1; host < network + size - 1; host++) {
@@ -163,7 +191,7 @@ public final class ConfigurationManager {
         return result;
     }
     private static void loadVxWorks(Map<String, Object> m, CollectorConfiguration.VxWorksSettings v) throws IOException {
-        keys(m, "enabled", "autoDiscoverPorts", "ports", "baudRate", "dataBits", "stopBits", "parity", "flowControl", "portTimeoutSeconds", "commandTimeoutSeconds", "maxOutputMb");
+        keys(m, "enabled", "autoDiscoverPorts", "ports", "baudRate", "dataBits", "stopBits", "parity", "flowControl", "portTimeoutSeconds", "commandTimeoutSeconds", "maxOutputMb", "customCommand", "customCommandDelaySeconds");
         v.enabled = bool(m, "enabled", false);
         v.autoDiscoverPorts = bool(m, "autoDiscoverPorts", false);
         v.baudRate = number(m, "baudRate", 115200, 110, 921600);
@@ -177,6 +205,13 @@ public final class ConfigurationManager {
         v.commandTimeoutSeconds = number(m, "commandTimeoutSeconds", 10, 1, 60);
         if (v.commandTimeoutSeconds >= v.portTimeoutSeconds) throw new IOException("Komut timeout'u port timeout'undan kısa olmalı.");
         v.maxOutputMb = number(m, "maxOutputMb", 8, 1, 64);
+        if (m.containsKey("customCommand")) {
+            Object command = m.get("customCommand");
+            if (!(command instanceof String) || !((String) command).matches("|[A-Za-z_][A-Za-z0-9_]{0,63}"))
+                throw new IOException("remote.vxworks.customCommand boş veya tek bir komut simgesi olmalı.");
+            v.customCommand = (String) command;
+        }
+        v.customCommandDelaySeconds = number(m, "customCommandDelaySeconds", 3, 0, 10);
         for (Object value : list(m, "ports")) {
             String port = text(value, "remote.vxworks.ports").toUpperCase(Locale.ROOT);
             if (!port.matches("COM[1-9][0-9]{0,4}") || Integer.parseInt(port.substring(3)) > 65535) throw new IOException("Seri port COM1–COM65535 aralığında olmalı.");
@@ -218,6 +253,6 @@ public final class ConfigurationManager {
     }
     private static void keys(Map<String, Object> m, String... allowed) throws IOException {
         Set<String> known = new HashSet<>(Arrays.asList(allowed));
-        for (String key : m.keySet()) if (!known.contains(key)) throw new IOException("Bilinmeyen konfigürasyon alanı. Parolaları YAML'a yazmayın.");
+        for (String key : m.keySet()) if (!known.contains(key)) throw new IOException("Bilinmeyen konfigürasyon alanı. Sunucu giriş bilgilerini YAML'a yazmayın.");
     }
 }

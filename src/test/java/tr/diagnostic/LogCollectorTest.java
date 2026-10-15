@@ -9,7 +9,7 @@ import java.util.*;
 
 public class LogCollectorTest {
     @Test public void outputAboveApplicationDoesNotHideLogsOrCollectOwnReports() throws Exception {
-        Path output=temp.getRoot().toPath();Path source=Files.createDirectories(output.resolve("ares2n/Log"));
+        Path output=temp.getRoot().toPath();Path source=Files.createDirectories(output.resolve("sample-app/Log"));
         write(source.resolve("app.log"),"source content");
         write(output.resolve("diagnostic-20261013-123456-abcdef12.zip"),"old report");
         Path oldStaging=Files.createDirectory(output.resolve(".diagnostic-staging-old"));write(oldStaging.resolve("secret.log"),"old staging");
@@ -18,7 +18,7 @@ public class LogCollectorTest {
         CollectorConfiguration.LogDirectory spec=new CollectorConfiguration.LogDirectory();spec.path=output;spec.modifiedWithinHours=0;c.logs.add(spec);
         List<DiagnosticReportGenerator.LogResult> results=new LogCollector().collect(c,staging);
         Assert.assertEquals(1,results.stream().filter(r->r.status.equals("COPIED")).count());
-        Assert.assertTrue(Files.isRegularFile(staging.resolve("logs/01/ares2n/Log/app.log")));
+        Assert.assertTrue(Files.isRegularFile(staging.resolve("logs/01/sample-app/Log/app.log")));
         // Also test the actual default layout: source is under the output root.
         c.logs.clear();spec.path=source;spec.destination="app";c.logs.add(spec);
         results=new LogCollector().collect(c,staging);Assert.assertEquals(1,results.size());
