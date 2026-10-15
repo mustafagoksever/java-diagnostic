@@ -1,104 +1,174 @@
-# Hata Raporu Oluştur — Adım Adım
+# Hata Raporu Oluştur — İşlem Adımları
 
-Bu açıklama **Uzak Sunucu** modu içindir. Java tanılama araçları, ping ve BAT dosyası **sunucuda çalıştırılır**. VxWorks komutları, sunucunun COM portları üzerinden bağlı cihaza gönderilir ve **VxWorks cihazında çalışır**. Dosyaları indirme, analiz ve ZIP hazırlama işlemleri bu bilgisayarda yapılır.
+Bu belge, **Hata Raporu Oluştur** düğmesine basıldığında programın hangi bilgileri topladığını ve işlemlerin nerede yapıldığını açıklar. Kullanıcının ayrıca komut girmesi gerekmez. Ping, VxWorks, kaynak izleme ve log hazırlama gibi isteğe bağlı adımlar, önceden yapılan ayarlarda etkinse çalışır.
 
-**Hata Raporu Oluştur** butonuna basınca:
+## İşlemler nerede yapılır?
 
-1. **Sunucuya bağlanır.** Ekranda girdiğin kullanıcı adı ve parola kullanılır. Sunucu adresi admin ekranında kaydedilen değerden, kayıt yoksa gömülü config'ten alınır. JDK keşif ayarı gömülü config'tedir; açık --host/--config operatör override'ı kayıtlı adresten önce gelir.
+**Uzak Sunucu** modunda inceleme, bağlantı kurulan sunucu üzerinde yapılır. **Yerel Bilgisayar** modunda programın açık olduğu bilgisayar incelenir. Program doğrudan sunucu üzerinde yerel modda açılırsa o sunucunun kendi bilgileri toplanır.
 
-2. **Geçici çalışma klasörü açar.** Sunucuda önce `C:\Temp`, alan veya erişim uygun değilse `D:\Temp` denenir. Her rapor için ayrı bir iş klasörü oluşturulur. Config'teki başlangıç beklemesi uygulanır; mevcut değer 10 saniyedir.
-
-3. **Sunucudaki Java süreçlerini bulur.** PID, uygulama adı, kullanıcı ve oturum bilgileri kaydedilir. Tanınan Collector süreçleri rapor hedefinden çıkarılır.
-
-4. **Sunucunun sistem bilgilerini toplar.** CPU, RAM ve disk bilgileri alınır; config'teki süre boyunca CPU/RAM kullanımı izlenir.
-
-5. **Sunucudaki uygun JDK'yı otomatik bulup Java bilgilerini ve thread dump'larını alır.** Config'teki `remote.jdkHome: auto` ile hedef Java klasörü, JAVA_HOME, PATH, kayıt defteri ve yaygın kurulum dizinleri incelenir. PID'nin sürüm ve 32/64 bit mimarisine göre araçlar sıralanır. `jcmd PID VM.version` ve etkinse `jstat -gcutil PID 1000 1` denenir. Her hedef Java için üç dump örneği alınır: önce `jcmd PID Thread.print -l`, başarısızsa `jstack -l PID`, gerekirse sonraki uygun JDK. Bir örnekte ilk geçerli dump'ta durulur; başarılı araç kalan örneklerde tercih edilir. Örnekler arasında en az 5 saniye beklenir. Aday sayısı ve toplam deneme süresi sınırlıdır. Seçilen araç `java-surecleri.txt`, adaylar ve elenme nedenleri `debug/jdk-discovery.json`, ham hatalar manifest/dump dosyalarındadır.
-
-6. **Config'teki IP ağına sunucudan ping atar.** `remote.ping.subnet` /24 olarak ayarlanırsa `.1–.254` arasındaki 254 hedefi, aynı anda en fazla 16 IP olacak şekilde tarar. IP başına 1 istek, 1 saniye zaman aşımı kullanılır; bunların tamamı config'ten alınır. `addresses` ile ek IP tanımlanabilir. Yanıt veren/vermeyen sayıları ve gecikmeler `ping/SONUC.txt`, tablo `ping/results.csv`, denemeler `ping/results.json` içinde yer alır; 254 ayrı dosya üretilmez. Ping yanıtı cihazın VxWorks olduğunu göstermez.
-
-7. **Sunucudaki COM portlarını bulur ve bağlı VxWorks cihazlarından bilgi alır.** `remote.vxworks.autoDiscoverPorts: true` olduğunda sunucuda kayıtlı bütün portları sırayla dener; kapalıysa config'teki `ports` listesi kullanılır. Mevcut bağlantı ayarları **115200 baud, 8 veri biti, 1 stop biti, parity yok, flow control yok** şeklindedir. Kullanımda olan port devralınmaz. Konsol istemi geldikten sonra her cihazda aşağıdaki “VxWorks komut sırası” uygulanır. Bu adım da Hata Raporu Oluştur düğmesine dahildir; ayrı komut girmen gerekmez.
-
-8. **Config'te belirtilen BAT dosyasını sunucuda çalıştırır.** Yol, `remote.beforeLogCopyBatch` alanından alınır ve sunucudaki uygulama klasörüne göre çözülür; dosya adı kodda sabit değildir. Başarıyla biterse `remote.beforeLogCopyDelaySeconds` kadar beklenir; mevcut değer 30 saniyedir. BAT başarısız olursa veya config'teki süre sınırını aşarsa log kopyalama atlanır ve nedeni kaydedilir.
-
-9. **Config'teki log klasörlerini sunucudan kopyalar.** Alt klasör, uzantı, tarih ve dosya boyutu filtreleri config'e göre uygulanır. Collector kaynak dosyaları silmez veya taşımaz. Önceki adımda çalıştırılan BAT, kendi içeriğine göre kaynaklarda işlem yapabilir.
-
-10. **Toplanan dosyaları bu bilgisayara indirir.** Dosya boyutları ve SHA-256 değerleri kontrol edilir. Sunucudaki işin bittiği doğrulandıktan sonra yalnız o rapora ait geçici klasör temizlenir; temizlik başarısızsa uyarı verilir.
-
-11. **Özetleri ve hata kayıtlarını hazırlar.** Java dump analizleri, ping sonuçları, COM/task/socket listeleri ve `Manifest.json` oluşturulur. Başarılı ve başarısız işlemler rapora yazılır. ZIP kökündeki **`rapor-zamanlari.txt`**, Collector'ın açılışını, toplama başlangıcını ve ZIP öncesi hazırlık bitişini; sunucunun ve bu bilgisayarın saatlerini, saat dilimlerini ve geçen sürelerini gösterir. Saatler UTC ve yerel ofsetleriyle ayrılır; aynı veriler `Manifest.json/timing` içinde bulunur.
-
-12. **Tek şifreli ZIP oluşturur.** Bütün veriler bu bilgisayardaki `outputDirectory` ile seçilen klasöre AES-256 şifreli ZIP olarak yazılır. ZIP içeriği tekrar okunarak doğrulanır.
-
-Bir JVM'den veya COM portundan veri alınamazsa nedeni kaydedilir ve diğer hedefler denenir. Eksik veri içeren rapor **PARTIAL** olarak işaretlenebilir. Hedef Java uygulamaları sonlandırılmaz, yeniden başlatılmaz ve zorla GC çalıştırılmaz. İşlemler arka planda yürütülür; arayüz kullanılabilir kalır.
-
-**Ekranlar:** Normal JAR açılışında yalnız kullanıcı adı/parola ve “Hata Raporu Oluştur”/“Çıktı Klasörünü Aç” vardır; teknik günlük ve süreç listesi gösterilmez. `java -jar java-diagnostic-collector.jar --admin` ayrıntılı ekranı açar. Admin ekranında IP girilip “Sunucu IP'sini Kaydet” ile aynı Windows hesabının sonraki açılışlarına kaydedilir; yalnız adres saklanır. “Java Süreçlerini Listele” yalnız keşif yapar; ping, seri port ve BAT çalıştırmaz. “Logları Temizle” admin ekranındaki günlüğü ve süreç tablosunu temizler. “Çıktı Klasörünü Aç” her iki ekranda bu bilgisayarın rapor klasörünü açar.
-
-## Windows sunucusunda ek sorgular
-
-Java dump'larından sonra, ping/COM adımlarından önce `remote.windowsDiagnostics: true` ise aşağıdaki sorgular **bağlanılan sunucuda** çalışır. Önce ZIP içindeki **`server/SONUC.txt`** dosyasını aç. Her sorgunun süresi, sonucu ve hatası `Manifest.json/operations` içinde bulunur. Tek sorgu en fazla 15 saniye, WMI/olay sorguları ayrıca `scanTimeoutSeconds` ile sınırlıdır; toplam uzak iş limiti geçerlidir. Bir komut hatası kalan sorguları engellemez; eksik veri PARTIAL olarak görünür. Java Süreçlerini Listele düğmesi bu sorguları çalıştırmaz.
-
-| Bilgi | Sunucuda çalıştırılan sorgu | ZIP konumu |
+| İşlem | Uzak Sunucu modu | Yerel Bilgisayar modu |
 | --- | --- | --- |
-| IP, MAC, DNS, adaptör | `ipconfig /all` | `server/network/ipconfig.txt` |
-| Açık TCP/UDP portları ve PID | `netstat -ano` | `server/network/netstat-ano.txt` |
-| TCP/UDP/IP sayaçları | `netstat -s` | `server/network/netstat-statistics.txt` |
-| Rota ve ARP | `route print`, `arp -a` | `server/network/` |
-| Yardımcı hesabın SMB bağlantıları | `net use` | `server/network/share-connections.txt` |
-| Süreçler ve servis eşleşmeleri | `tasklist /v /fo csv`, `tasklist /svc /fo csv`, `Win32_Process`, `Win32_Service` | `server/diagnostics/` |
-| Sürücüler, donanım, Windows sürümü | `driverquery /v /fo csv`, `systeminfo /fo list` | `server/diagnostics/` |
-| Yardımcı hesabı, oturumlar, saat servisi | `whoami /all`, `query user`, `w32tm /query /status` | `server/diagnostics/` |
-| Son 48 saatin kritik/hata/uyarı olayları | `Get-WinEvent`, System ve Application günlüklerinden bağımsız olarak en fazla 100'er kayıt | `server/diagnostics/events.json`; ayrı sonuçlar `events-system.json`, `events-application.json` |
-| CPU, RAM, disk | Mevcut Windows sistem ve kaynak izleme sorguları | ZIP kökündeki `sunucu-kaynak-kullanimi.txt`, `kaynak-izleme-ozeti.txt`, `disk-bilgileri.txt` |
+| Java uygulamalarının ve Windows bilgilerinin incelenmesi | Sunucuda yapılır. | Programın açık olduğu bilgisayarda yapılır. |
+| Ağdaki cihazlara ping gönderilmesi | Sunucudan gönderilir. | Programın açık olduğu bilgisayardan gönderilir. |
+| Seri bağlantı için COM portu kullanılması | Sunucunun COM portları kullanılır. | Programın açık olduğu bilgisayarın COM portları kullanılır. |
+| VxWorks bilgilerinin okunması | Sunucuya seri kanaldan bağlı VxWorks cihazından okunur. | Bu bilgisayara seri kanaldan bağlı VxWorks cihazından okunur. |
+| Uygulama loglarının hazırlanması ve alınması | Sunucudaki kaynaklardan alınır. | Bu bilgisayardaki kaynaklardan alınır. |
+| Sonuçların analiz edilmesi ve ZIP raporunun hazırlanması | Programın açık olduğu bilgisayarda yapılır. | Programın açık olduğu bilgisayarda yapılır. |
 
-Ham Windows EXE çıktıları sunucunun OEM kodlamasında, JSON ve özet UTF-8'dir. Olayların 48 saatlik penceresi **sunucu saatine** göre hesaplanır. `whoami`/`net use`, WMI ile başlatılan toplama hesabının oturumunu gösterir; diğer etkileşimli kullanıcıların sürücü eşlemelerinin tamamını göstermez. Olay günlüklerine erişim reddedilirse hata korunur. `w32tm` yalnız durum okur; saat eşitlemez. VxWorks `tt`, `ti`, `checkStack` ve config ile seçilen komutun birebir Windows karşılığı yoktur; Java yığınları mevcut JVM dump dosyalarındadır.
+Aşağıdaki adımlarda **hedef bilgisayar**, seçilen moda göre sunucuyu veya yerel bilgisayarı ifade eder.
 
-Aktarım sonrası yalnız o raporun UUID içeren geçici klasörü silinir. Kısa süreli dosya/SMB kilitlerinde temizlik beş saniyeye kadar yeniden denenir. Kalıcı kilit veya yetki hatası varsa gerçek hata ve klasör yolu raporlanır; başka uygulamanın dosya tutamacı zorla kapatılmaz. Çocuk yardımcılar Windows dizininde başlatılır ve seri port kapanış hatası dosya akışlarının kapanmasını engellemez.
+## 1. Kullanıcı rapor oluşturmayı başlatır
 
-System ve Application ayrı işlemlerdir. Biri erişim hatası veya timeout verirse diğerinin kayıtları korunur ve diğer sorgu yine denenir. `events.json` alınabilen kayıtların birleşimidir; tek kanalın hatası `server/SONUC.txt` ve manifestte görünür. Olay bulunmayan başarılı kanalda geçerli boş JSON listesi (`[]`) yazılır.
+Uygulamayı açın. Kullanıcı adı ve parola alanları görünüyorsa size verilen sunucu kullanıcı adı ve parolasını girin. Yerel çalışmada sunucu giriş bilgileri istenmez.
 
-## VxWorks komut sırası
+**Hata Raporu Oluştur** düğmesine basın. İşlem tamamlanana kadar pencereyi kapatmayın. Yüzde göstergesi tamamlanan aşamaları gösterir; kalan süre tahmini değildir. Bazı aşamalar diğerlerinden daha uzun sürebilir.
 
-Komutlar bu bilgisayardaki Windows CMD üzerinde çalışmaz. Collector, **sunucudaki COM portuna** bağlanır; komutu seri hat üzerinden gönderir ve **bağlı VxWorks cihazının** yanıtını kaydeder. Aşağıdaki sıra her doğrulanmış port için tekrarlanır. `0xTASKID`, ilk `i` çıktısından okunan gerçek task kimliğidir; elle yazılmaz.
+## 2. Hedef bilgisayarda toplama hazırlığı yapılır
 
-| Sıra | Gönderilen komut | Ne için alınır? |
+Uzak modda girilen bilgilerle sunucuya bağlantı kurulur. Yerel modda işlemler doğrudan bu bilgisayarda başlar.
+
+Rapor için gerekli çalışma alanı hazırlanır. Başlangıç beklemesi ayarlanmışsa bu süre beklendikten sonra bilgi toplamaya geçilir.
+
+## 3. Çalışan Java uygulamaları bulunur
+
+Hedef bilgisayardaki Java uygulamaları belirlenir. Uygulama adı, süreç numarası, çalıştıran kullanıcı ve oturum gibi bilgiler kaydedilir.
+
+Rapor hazırlayan programın kendisi inceleme hedeflerinin dışında tutulur. Birden fazla hedef Java uygulaması varsa her biri için ayrı bilgi toplanır. Java uygulaması bulunamazsa bu durum belirtilir; alınabilen diğer bilgiler raporda korunur.
+
+## 4. Sistem ve kaynak kullanımı bilgileri alınır
+
+Hedef bilgisayarın Windows, işlemci, bellek ve disk bilgileri toplanır.
+
+Kaynak izleme etkinse belirlenen süre boyunca hedef Java uygulamalarının CPU ve RAM kullanımı aralıklı olarak ölçülür. Böylece rapor, tek bir anlık değerin yanında ölçüm süresince gözlenen kaynak kullanımını da içerir. Bu ölçümler diğer toplama işlemleriyle aynı anda devam edebilir.
+
+## 5. Java uygulamalarının çalışma durumu incelenir
+
+Her hedef Java uygulamasının sürüm bilgisi alınmaya çalışılır. Etkinse bellek temizleme faaliyetlerine ilişkin istatistikler de okunur.
+
+Ardından her uygulamadan, örnekler arasında en az beş saniye bırakılarak **üç ayrı iş parçacığı görüntüsü (thread dump)** alınmaya çalışılır. Bu görüntüler, iş parçacıklarının o anda ne yaptığını, hangi işlemlerde beklediğini ve hangi kilitleri beklediğini incelemek için kullanılır.
+
+Birden fazla görüntünün karşılaştırılması, aynı beklemenin devam edip etmediğini görmeye yardımcı olur. Alınamayan görüntüler ve nedenleri ayrıca belirtilir.
+
+## 6. Ayrıntılı Windows tanılama bilgileri toplanır
+
+Bu adım etkinse hedef bilgisayardan şu bilgiler alınır:
+
+- Ağ adaptörleri, IP, MAC ve DNS bilgileri.
+- TCP/UDP bağlantıları, port bilgileri ve ağ sayaçları.
+- Ağ yönlendirme ve adres eşleştirme bilgileri.
+- Çalışan süreçler, servisler ve sürücüler.
+- Kullanıcı oturumları ve saat servisi durumu.
+- Son 48 saatteki kritik Windows olayları, hata ve uyarılar; Sistem ve Uygulama günlüklerinden en fazla 100'er kayıt.
+
+Uzak modda bu bilgiler sunucuya, yerel modda programın açık olduğu bilgisayara aittir. Bir bilgiye erişilemezse alınabilen diğer sonuçlar korunur.
+
+## 7. Ağdaki cihazlara erişim kontrol edilir
+
+Ping adımı etkinse önceden belirlenen IP adreslerine veya IP ağına ping gönderilir.
+
+Her hedef için yanıt alınıp alınmadığı, başarılı deneme sayısı, paket kaybı ve yanıt süresi kaydedilir. Sonuçlar toplu bir liste ve özet halinde hazırlanır.
+
+**Uzak modda ping sunucudan gönderilir.** Bu nedenle sonuç, sunucunun ilgili cihaza erişimini gösterir. Yerel modda ise bu bilgisayarın erişimi ölçülür. Ping yanıtı alınamaması cihazın kapalı olduğunu tek başına göstermez.
+
+## 8. COM portundan VxWorks cihazına seri bağlantı kurulur
+
+VxWorks toplama etkinse hedef bilgisayardaki COM portları kullanılır. Ayara göre portlar otomatik bulunur veya önceden belirlenen port listesi denenir. Birden fazla port varsa sırayla işlem yapılır.
+
+Her port için şu hazırlıklar yapılır:
+
+1. Cihazla uyumlu seri bağlantı ayarları kullanılarak port açılmaya çalışılır.
+2. Seri kanaldan cihazın konsol yanıtı beklenir.
+3. Cihazın VxWorks olduğu ve sürümü doğrulanır.
+4. Cihazın ağ arayüzü, IP ve MAC bilgileri alınmaya çalışılır.
+5. Kuruluma özel bir cihaz komutu tanımlanmışsa bu komutun çıktısı ayrıca alınır.
+
+VxWorks komutları, **COM portu üzerinden seri kanala bağlı cihazda** çalışır. Sunucu veya yerel bilgisayar bu seri bağlantıyı sağlar ve gelen yanıtları kaydeder.
+
+Port açılamazsa, kullanımda ise veya cihaz doğrulanamazsa neden kaydedilir. VxWorks olduğu doğrulanmayan cihazda sonraki tanılama komutlarına geçilmez. Diğer portlar, kalan çalışma süresi içinde denenir.
+
+## 9. VxWorks task'ları tek tek incelenir
+
+Önce cihazdan güncel **task listesi** alınır. Bu listede cihazın sunduğu task adları, task kimlikleri, öncelikleri ve çalışma durumları bulunur.
+
+**İlk listede görülen bütün task'lar için sırayla inceleme denenir.** Kullanıcının task seçmesine veya her task için ayrı komut girmesine gerek yoktur.
+
+| İnceleme | Yapılan işlem | Elde edilmek istenen bilgi |
 | --- | --- | --- |
-| 1 | `version` | VxWorks sürümünü doğrular. Sürüm başlığı doğrulanmazsa o portta başka komut gönderilmez. |
-| 2 | `ifconfig`; bilgi alınamazsa `ifShow` | IP/MAC ve ağ arayüzlerinden hangi donanıma bağlanıldığını anlamaya yardımcı olur; COM portuyla eşleştirilir. |
-| 3 | `remote.vxworks.customCommand` ile seçilen komut | Bir kez çağrılır; cihazın verdiği ham çıktı saklanır. İlk konsol istemi döndükten sonra **customCommandDelaySeconds kadar ek veri okunur** (varsayılan 3 saniye). Geç gelen loglar da aynı `custom-command.txt` dosyasına eklenir; bu süre bitmeden `i` gönderilmez. Komutun uygulamaya özel iç etkileri varsayılmaz. |
-| 4 | `i` | Başlangıçtaki task listesini alır. Tanınan “Type <CR> to continue” isteminde otomatik Enter göndererek sonraki sayfaları da okur. |
-| 5 | Her task için `tt 0xTASKID`, ardından `ti 0xTASKID` | Önce task'ın çağrı yığını, sonra task/stack/register ayrıntıları alınır. Bir task'ın TT/TI çifti bitince sonraki task'a geçilir. |
-| 6 | `i` | İkinci task görüntüsünü alır; ilk listeye göre eklenen ve kaybolan task kimlikleri kaydedilir. |
-| 7 | `checkStack 0` | Task'ların stack kullanımı ve kalan payını incelemek için SIZE/CUR/HIGH/MARGIN tablosu istenir. Stack belleğini taradığından cihazda ek yük oluşturabilir. |
-| 8 | `taskShow 0,2` | Task'ların ayrıntılı durum bilgileri istenir. |
-| 9 | `devs` | Cihazda kayıtlı I/O aygıtlarını listeler. |
-| 10 | `whoami` | Konsolun kullanıcı bilgisini ister. |
-| 11 | `w` | Bekleme durumlarına ilişkin bilgi ister. |
-| 12 | `tw 0xTASKID` | **İlk listede PEND durumundaki task'lar** için beklenen nesne/semafor ayrıntılarını ister. Task askıya alma komutu gönderilmez. |
-| 13 | `inetstatShow` | Socket/bağlantı ve açık port bilgilerini ister. |
-| 14 | `tcpstatShow 0` | TCP istatistiklerini ister. |
-| 15 | `udpstatShow 0` | UDP istatistiklerini ister. |
-| 16 | `ipstatShow 0` | IP istatistiklerini ister. |
-| 17 | `routeShow` | Yönlendirme tablosunu ister. |
-| 18 | `nfsDevShow` | NFS aygıt/bağlantı bilgilerini ister. |
-| 19 | `memShow 0` | Bellek kullanımını ister; bu akışta bir kez çalıştırılır. |
-| 20 | Gerektiğinde `lkup "netstat"`, ardından `netstat "-a -n"` | Önceki ağ yanıtından socket satırı çıkarılamazsa alternatif denenir. `netstat` seçenek hatası döndürürse ayrıca `netstat "-a"` çalıştırılır. |
+| Task listesi | `i` ile ilk liste alınır. | O anda mevcut task'lar ve durumları. |
+| Her task'ın çağrı yığını | Her task kimliği için `tt` denenir. | Task'ın hangi çağrı veya işlem üzerinde bulunduğu. |
+| Her task'ın ayrıntıları | Her task kimliği için `ti` denenir. | Cihazın sağladığı task, yığın ve işlemci kayıt bilgileri. |
+| Liste değişiklikleri | Task incelemesinden sonra `i` yeniden alınır. | İlk listeye göre eklenen veya kaybolan task'lar. |
+| Bekleyen task'lar | İlk listede bekleme durumunda görülen task'lar için `tw` denenir. | Task'ın beklediği nesne veya kaynağa ilişkin bilgi. |
 
-Her komutun her VxWorks imajında bulunması garanti değildir. `unknown symbol` gibi yanıtlar ham çıktısıyla kaydedilir; istem geri geldiyse sonraki adıma geçilir. İstem dönmezse, port süresi dolarsa veya bağlantı hatası oluşursa o portta yeni komut gönderilmez; alınan kısmi veriler korunur ve kalan portlar toplam iş süresi elverdiğince denenir.
+Her task için alınabilen çıktılar ayrı saklanır. Bir task'ın yığın bilgisi alınamazsa, bağlantı ve süre sınırları elverdiğinde task'ın ayrıntıları ve diğer task'lar da denenir.
 
-Mevcut config'te tek komut limiti **10 saniye**, bir portun toplam limiti **180 saniye**, bütün uzak işin limiti **1800 saniye**dir. özel komut'ın ilk isteminden sonraki üç saniyelik okuma için komut okuma bütçesi gerektiğinde uzatılır; port/toplam iş sınırları korunur. Yanıt başına 1 MiB, en fazla 100 sayfalama devamı ve başlangıç listesinde 4096 task sınırı vardır. Bu sınırlar nedeniyle çok büyük veya yavaş bir cihazın bütün task'larına ulaşılamayabilir; raporda nedeni görünür. Reset, yeniden başlatma ve bağımsız `.` komutu gönderilmez.
+**Bütün task'ların bilgisinin mutlaka alınacağı garanti edilmez.** Cihazın desteklemediği işlemler, yanıt vermemesi, bağlantı sorunu, süre veya çıktı sınırı nedeniyle inceleme eksik kalabilir. Kaç task bulunduğu, kaçının denendiği ve kaçından bilgi alınabildiği raporda gösterilir.
 
-## Çıktıda nereye bakılır?
+## 10. VxWorks cihazının ek durumu kaydedilir
 
-Önce raporun ana özetini, sonra **`vxworks/SONUC.txt`** dosyasını aç. Bu dosya COM portlarını, bulunan cihaz kimliklerini ve başarılı/başarısız komutları topluca gösterir. Ayrıntı gerektiğinde ilgili `vxworks/ports/port-COM…/` klasörüne gir:
+Task incelemesine ek olarak cihazın desteklediği ölçüde şu bilgiler alınmaya çalışılır:
 
-| Dosya / klasör | İçerik |
+- Saat/zaman bilgisi ve yüklü modüller.
+- Task'ların yığın kullanımı ve genel task özeti.
+- Cihaz/aygıt listesi ve kullanıcı/oturum bilgileri.
+- TCP/UDP bağlantıları ve dinlenen portlar.
+- Ağ protokollerinin istatistikleri ve yönlendirme bilgileri.
+- Ağ dosya sistemi bağlantıları ve bellek kullanımı.
+
+Seri konsol yanıtları ve task çıktıları, ilgili COM portuna göre ayrı kaydedilir. Böylece hangi bilginin hangi porttaki cihazdan geldiği takip edilebilir.
+
+Alınamayan veya desteklenmeyen bilgiler ayrıca belirtilir. Örneğin port tablosu okunamadığında bu sonuç, cihazda açık port olmadığı şeklinde değerlendirilmez.
+
+## 11. Uygulama logları kopyalama için hazırlanır
+
+Kurulumda bir log hazırlama veya dışa aktarma işlemi tanımlanmışsa hedef bilgisayarda çalıştırılır. Uzak modda sunucuda, yerel modda bu bilgisayarda yürütülür.
+
+Hazırlık işleminin tamamlanması beklenir. Başarılı olursa logların yazılabilmesi için ayarlanan ek bekleme süresi de uygulanır. Böyle bir hazırlık tanımlanmamışsa doğrudan log toplamaya geçilir.
+
+Hazırlık başarısız olursa veya süresinde tamamlanmazsa uygulama loglarının kopyalanması atlanır; daha önce alınmış tanılama bilgileri raporda korunur. Hazırlık işlemi açık bir masaüstü oturumu gerektiriyorsa ilgili oturumun açık ve kilitsiz olması gerekir.
+
+## 12. Belirlenen log dosyaları alınır
+
+Önceden seçilmiş klasörler ve tek dosya kaynakları taranır. Ayarlara göre alt klasörlere de bakılır.
+
+Hangi dosyaların alınacağı şu seçimlere bağlıdır:
+
+- Dosya uzantısı.
+- Son değiştirilme zamanı.
+- Dosya başına boyut sınırı.
+- Alt klasörlerin dahil edilip edilmemesi.
+
+Boyut sınırı tek bir dosya için uygulanır. Sınırı aşan dosyalar ve erişilemeyen kaynaklar raporda belirtilir.
+
+Uzak modda sunucudan alınan dosyalar programın açık olduğu bilgisayara aktarılır. Yerel modda bu bilgisayardaki dosyalar rapora kopyalanır. Kopyalama sırasında dosyada değişiklik tespit edilirse bu da belirtilir.
+
+## 13. Sonuçlar birleştirilir ve rapor hazırlanır
+
+Toplanan bilgiler programın açık olduğu bilgisayarda bir araya getirilir. Java iş parçacıklarındaki beklemeler ve kilitlenme belirtileri, loglardaki hata kayıtları, ping sonuçları ve VxWorks bulguları için özetler hazırlanır.
+
+Rapor; alınabilen dosyaları, başarılı ve başarısız adımları, başlangıç/bitiş zamanlarını ve geçen süreleri içerir. Özetler incelemeye yardımcı olur; tek başına arızanın kesin nedenini belirlediği anlamına gelmez.
+
+Bütün bilgiler **tek bir şifreli ZIP dosyasında** toplanır ve dosyanın içeriği doğrulanır. Rapor her iki modda da programın açık olduğu bilgisayardaki rapor klasörüne kaydedilir. Tamamlanan işe ait geçici çalışma dosyaları temizlenir; temizlik tamamlanamazsa uyarı verilir.
+
+Destek ekibi rapor içinde şu özetlerden yararlanabilir:
+
+| Dosya | İçerik |
 | --- | --- |
-| `custom-command.txt` | Config ile seçilen komutun yanıtı ve ayarlanan ek okuma sırasında gelen loglar. |
-| `i-before.txt`, `i-after.txt` | Önceki ve sonraki task listelerinin ham çıktıları. |
-| `tasks/tt-0x….txt`, `tasks/ti-0x….txt`, `tasks/tw-0x….txt` | İlgili task'ın trace, ayrıntı ve varsa bekleme nesnesi yanıtı. |
-| `diagnostics/` | version, checkStack, taskShow, devs, whoami ve w çıktıları. |
-| `network/` | Cihaz kimliği, socket, TCP/UDP/IP, route, NFS ve bellek yanıtları. |
-| `commands.json`, `console.txt` | Komut bazında süre/başarı/hata kayıtları ve seri konsol dökümü. |
+| `analiz-ozeti.txt` | Java iş parçacığı incelemesinin özeti. |
+| `log-hata-ozeti.txt` | Alınan uygulama loglarında bulunan hata kayıtlarının özeti. |
+| `server/SONUC.txt` | Ayrıntılı Windows tanılama sonuçlarının özeti; ilgili adım etkinse bulunur. |
+| `ping/SONUC.txt` | Ping erişim sonuçlarının özeti; ping etkinse bulunur. |
+| `vxworks/SONUC.txt` | COM portları, cihazlar ve task incelemelerinin özeti; VxWorks toplama etkinse bulunur. |
+| `vxworks/task-listesi.csv` | Task'lar ve her task için bilgi alınma durumu. |
+| `vxworks/socket-port-listesi.csv` | Cihazlardan alınabilen bağlantı ve port bilgileri. |
+| `rapor-zamanlari.txt` | Raporun zaman bilgileri ve süreleri. |
 
-Config ile seçilen Özel komut için yalnız `value = 0` görülmesi, cihazdaki uygulamanın ayrıca bir log dosyası ürettiğinin kanıtı değildir. Ham yanıt ve bekleme sırasında gelen veriler olduğu gibi saklanır. Ekrandaki ilerleme mesajları bazı ara komutları göstermeyebilir; hangi komutun gerçekten denendiği `commands.json` üzerinden kontrol edilir.
+## 14. Kullanıcı raporu destek ekibiyle paylaşır
 
-Özel cihaz komutu ve ek okuma süresi yalnız YAML içindeki `remote.vxworks.customCommand` / `customCommandDelaySeconds` alanlarından gelir. Boş komut alanı bu adımı kapatır; diğer VxWorks sorguları devam eder. Sunucu adresi, dosya yolları ve ZIP parolası için kodda ortama özel sabit yoktur. ZIP parolası `zipPassword` alanından okunur ve sunucuya iletilmez.
+Rapor hazır mesajından sonra **Çıktı Klasörünü Aç** düğmesine basın. Oluşan ZIP dosyasını destek ekibine iletin.
+
+“Bazı bilgiler alınamadı” uyarısı varsa oluşan raporu yine paylaşın. Bu, bazı adımların eksik kaldığını gösterir; alınabilen bilgiler raporda bulunur.
+
+İşlem başarısız olur ve rapor oluşmazsa ekranda belirtilen hata kaydı dosyasını destek ekibine iletin.
+
+**Ayarlar menüsü yalnızca admin ekranındadır.** Sunucu adresi, kaynak klasörler, COM portları veya diğer seçimlerin değişmesi gerekiyorsa sorumlu kişiye başvurun.

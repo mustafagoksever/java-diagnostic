@@ -47,7 +47,7 @@ public class SwingUiIT {
                 for(Window window:Window.getWindows())if(window instanceof CollectorFrame&&title.equals(((CollectorFrame)window).getTitle())){
                     CollectorFrame frame=(CollectorFrame)window;found[0]=true;
                     Assert.assertFalse("Local collection needs no server password",findPassword(frame.getContentPane()).getParent().isVisible());
-                    Assert.assertNull(findMode(frame.getContentPane()));Assert.assertTrue(containsText(frame.getContentPane(),"Bu bilgisayarda rapor oluşturulacak"));
+                    Assert.assertNull(frame.getJMenuBar());Assert.assertNull(findMode(frame.getContentPane()));Assert.assertTrue(containsText(frame.getContentPane(),"Bu bilgisayarda rapor oluşturulacak"));
                 }
             });Assert.assertTrue(found[0]);
         } finally {
@@ -87,7 +87,7 @@ public class SwingUiIT {
             CollectorFrame frame = new CollectorFrame(config);
             try {
                 Assert.assertEquals(config.applicationTitle, frame.getTitle());
-                Assert.assertEquals("Ayarlar",frame.getJMenuBar().getMenu(0).getText());
+                Assert.assertNull("Settings are available only in admin mode",frame.getJMenuBar());
                 frame.addNotify(); frame.validate();
                 JPasswordField password = findPassword(frame.getContentPane());
                 Assert.assertNull(findMode(frame.getContentPane()));Assert.assertNotNull(password);Assert.assertEquals(0,password.getPassword().length);

@@ -42,13 +42,15 @@ public final class CollectorFrame extends JFrame {
         super(config.applicationTitle + (admin ? " — Admin" : "")); this.config = config;
         this.admin=admin;this.configurationFile=configurationFile;
         this.failureReports=failureReports;
-        JMenuBar menuBar=new JMenuBar();JMenuItem editSettings=new JMenuItem("Sunucu ve Dizin Ayarları...");
-        settingsMenu.add(editSettings);menuBar.add(settingsMenu);setJMenuBar(menuBar);
-        editSettings.addActionListener(event->new SettingsDialog(this,config,configurationFile,mode.getSelectedIndex()==1,saved->{
-            DirectorySettings.apply(config,saved);serverPassword.setText("");rows.setRowCount(0);
-            setTitle(config.applicationTitle+(admin?" — Admin":""));mode.setSelectedIndex("local".equals(config.mode)?1:0);
-            append("Ayarlar kaydedildi. Sonraki raporda kullanılacak.");
-        }).setVisible(true));
+        if(admin){
+            JMenuBar menuBar=new JMenuBar();JMenuItem editSettings=new JMenuItem("Sunucu ve Dizin Ayarları...");
+            settingsMenu.add(editSettings);menuBar.add(settingsMenu);setJMenuBar(menuBar);
+            editSettings.addActionListener(event->new SettingsDialog(this,config,configurationFile,mode.getSelectedIndex()==1,saved->{
+                DirectorySettings.apply(config,saved);serverPassword.setText("");rows.setRowCount(0);
+                setTitle(config.applicationTitle+(admin?" — Admin":""));mode.setSelectedIndex("local".equals(config.mode)?1:0);
+                append("Ayarlar kaydedildi. Sonraki raporda kullanılacak.");
+            }).setVisible(true));
+        }
         progress.setForeground(new Color(0x2E7D32));
         progress.setStringPainted(true); progress.setString("Hazır");
         progress.setToolTipText("Tamamlanan işlem aşamalarına göre ilerleme; kalan süre tahmini değildir.");

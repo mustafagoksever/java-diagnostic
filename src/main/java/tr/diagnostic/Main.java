@@ -109,7 +109,7 @@ public final class Main {
     private static String display(String value) { return value == null ? "bilinmiyor" : value.replace('\n', ' ').replace('\r', ' ').replace('\t', ' '); }
     private static void printUsage() {
         System.out.println("java -jar java-diagnostic-collector.jar [gui] [--admin] [--config config.yaml]\n"
-            + "  Varsayılan: sade kullanıcı ekranı. Ayarlar menüsü: IP ve dizinler. --admin: günlükler ve süreç listesi.\n"
+            + "  Varsayılan: sade kullanıcı ekranı. --admin: ayarlar, günlükler ve süreç listesi.\n"
             + "  list-java [--config config.yaml]\n  validate-config [--config config.yaml]\n"
             + "  collect (--all | --pid 123[,456]) [--config config.yaml]\n"
             + "          [--generate-password | --password-env NAME]\n"
