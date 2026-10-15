@@ -41,7 +41,10 @@ public final class Main {
             }
             if (options.command.equals("gui")) {
                 if (GraphicsEnvironment.isHeadless()) throw new IllegalArgumentException("Swing için grafik oturumu gerekli; CLI kullanın.");
-                SwingUtilities.invokeLater(() -> new CollectorFrame(config).setVisible(true)); return -1;
+                ServerEndpointSettings endpointSettings=new ServerEndpointSettings();
+                if(options.host==null && options.config==null)config.remoteHost=endpointSettings.hostOrDefault(config.remoteHost);
+                if(!options.admin)config.mode="remote";
+                SwingUtilities.invokeLater(() -> new CollectorFrame(config,options.admin,endpointSettings).setVisible(true)); return -1;
             }
             CollectionOrchestrator orchestrator = new CollectionOrchestrator(config);
             if ("remote".equals(config.mode)) connection = readRemoteConnection(config, options.remotePasswordEnv);
@@ -104,7 +107,8 @@ public final class Main {
     }
     private static String display(String value) { return value == null ? "bilinmiyor" : value.replace('\n', ' ').replace('\r', ' ').replace('\t', ' '); }
     private static void printUsage() {
-        System.out.println("java -jar java-diagnostic-collector.jar [gui] [--config config.yaml]\n"
+        System.out.println("java -jar java-diagnostic-collector.jar [gui] [--admin] [--config config.yaml]\n"
+            + "  Varsayılan: sade kullanıcı ekranı. --admin: sunucu IP ayarı, günlükler ve süreç listesi.\n"
             + "  list-java [--config config.yaml]\n  validate-config [--config config.yaml]\n"
             + "  collect (--all | --pid 123[,456]) [--config config.yaml]\n"
             + "          [--generate-password | --password-env NAME]\n"
@@ -115,7 +119,7 @@ public final class Main {
     static final class Arguments {
         String command = "gui";
         Path config; // Only an explicit developer/operator override; never search beside the JAR.
-        boolean help, all, generatePassword;
+        boolean help, all, generatePassword, admin;
         String passwordEnv;
         String mode, host, username, remoteJdk, remotePasswordEnv;
         Set<Long> pids = new LinkedHashSet<>();
@@ -127,6 +131,7 @@ public final class Main {
                 String flag = args[i++];
                 switch (flag) {
                     case "--help": o.help = true; break;
+                    case "--admin": o.admin = true; break;
                     case "--config": o.config = Paths.get(value(args, i++, flag)); break;
                     case "--all": o.all = true; break;
                     case "--pid":
@@ -146,6 +151,8 @@ public final class Main {
                 }
             }
             if (o.help) return o;
+            if(o.admin && !o.command.equals("gui"))throw new IllegalArgumentException("--admin yalnızca GUI ekranında kullanılabilir.");
+            if(o.command.equals("gui") && "local".equals(o.mode) && !o.admin)throw new IllegalArgumentException("Yerel GUI için --admin --local kullanın.");
             if ("local".equals(o.mode) && (o.host != null || o.username != null || o.remoteJdk != null || o.remotePasswordEnv != null)) throw new IllegalArgumentException("Sunucu seçenekleri --local ile kullanılamaz.");
             if (o.command.equals("collect")) {
                 if (o.all == !o.pids.isEmpty()) throw new IllegalArgumentException("collect için yalnızca --all veya --pid belirtin.");

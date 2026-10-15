@@ -4,7 +4,13 @@ Dağıtım tek JAR'dır; kaynak `config.yaml` Maven sırasında JAR'a gömülür
 
 Uzak keşif ve sistem bilgisi sorguları ayrı PowerShell yardımcılarında `scanTimeoutSeconds` ile sınırlandırılır. PID kimlik sorguları `commandTimeoutSeconds` kullanır. Takılan sorguda yalnız oluşturulan yardımcı süreç kapatılır; JVM hedefi kapatılmaz. Her yardımcıya kalan toplam toplama süresi de uygulanır.
 
-Collector'ın varsayılanı **Uzak Sunucu**dur. **Yerel Bilgisayar** seçilirse yerel toplama akışı kullanılır. Swing'de yalnız mod seçimi, Windows kullanıcı adı ve maskeli parola alanı bulunur. Sunucu IP'si ve JDK keşif ayarı formda/başlatıcıda gösterilmez, config'ten alınır; varsayılan JDK seçimi otomatiktir. Kullanıcı adı ve parola alanları boş açılır; dosyaya kaydedilmez. YAML'da `remote.username` veya `remote.password` kullanılması reddedilir.
+Normal JAR açılışı **Uzak Sunucu** için sade ekrandır: yalnız Windows kullanıcı adı, maskeli parola ve rapor/çıktı klasörü düğmeleri bulunur. Ayrıntılı işlem günlüğü, süreç tablosu, IP ve mod seçimi bu ekrana eklenmez; arka plan mesajları da ekrana aktarılmaz. Kullanıcı genel ilerleme, sonuç veya teknik ayrıntı içermeyen hata mesajını görür.
+
+Başarısız GUI işleminin teknik nedeni, saat ve exception zinciri kalıcı olarak çıktı klasöründeki `collector-errors/collector-error-*.txt` dosyasına yazılır; çıktı yazılamıyorsa Java'nın `user.home` klasöründeki `.java-diagnostic/errors` kullanılır. Hata penceresi dosyanın gerçek konumunu gösterir. Normal ekran teknik metni göstermez; admin ekranında hata nedeni de görünür. Her hata ayrı dosyadır ve staging temizliği bu kayıtları silmez. Kullanıcı adı ve sunucu/ZIP parolaları ham ve JSON kaçışlı metinlerden temizlenir. Dosya yazımı SwingWorker üzerinden yapılır; iki konum da yazılamıyorsa kullanıcı bilgilendirilir.
+
+`java -jar java-diagnostic-collector.jar --admin` eski ayrıntılı ekranı açar. Burada **Sunucu IP/adresi** girilir; **Sunucu IP'sini Kaydet** adresi aynı Windows hesabının Java Preferences alanına yazar. Kaydetme ve toplama EDT dışında çalışır. Sonraki normal/admin GUI açılışlarında bu adres kullanılır. Açık `--host` veya `--config` override'ı kayıtlı adresten önce gelir; CLI komutları kendi config/host seçeneklerini kullanmayı sürdürür. Kayıt yoksa gömülü remote.host varsayılanı kullanılır. Kullanıcı adı/parola kaydedilmez. JDK ayarı config'te kalır; varsayılan keşif otomatiktir. YAML'da remote.username/remote.password reddedilir.
+
+Admin ekranındaki **Yerel Bilgisayar** seçimi yerel toplamayı açar; doğrudan yerel GUI için `--admin --local` kullanılabilir. CLI `collect --local` ve `list-java --local` davranışı korunur. --admin yalnız GUI seçeneğidir.
 
 ```yaml
 mode: remote                    # local = bu bilgisayarda çalış.

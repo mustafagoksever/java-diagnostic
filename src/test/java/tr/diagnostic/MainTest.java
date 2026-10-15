@@ -11,6 +11,15 @@ public class MainTest {
         Assert.assertEquals(java.nio.file.Paths.get("C:/aselsan").toAbsolutePath().normalize(), config.outputDirectory);
         Assert.assertEquals(15, config.logs.size());
     }
+    @Test public void adminFlagOpensOnlyTheDetailedGui() {
+        Assert.assertFalse(Main.Arguments.parse(new String[0]).admin);
+        Main.Arguments admin=Main.Arguments.parse(new String[]{"--admin"});
+        Assert.assertTrue(admin.admin);Assert.assertEquals("gui",admin.command);
+        Assert.assertTrue(Main.Arguments.parse(new String[]{"gui","--admin","--local"}).admin);
+        for(String[] args:new String[][]{{"collect","--all","--admin"},{"list-java","--admin"},{"validate-config","--admin"},{"gui","--local"}}){
+            try{Main.Arguments.parse(args);Assert.fail(Arrays.toString(args));}catch(IllegalArgumentException expected){}
+        }
+    }
     @Test public void validatesExclusiveTargetsAndPasswordOptions() {
         String[][] invalid = {{"collect"}, {"collect", "--all", "--pid", "12"}, {"collect", "--pid", "0"}, {"collect", "--pid", "12,"}, {"collect", "--all", "--generate-password", "--password-env", "SECRET"}, {"list-java", "--all"}, {"collect", "--pid"}, {"collect", "--all", "--password", "plaintext"}};
         for (String[] args : invalid) { try { Main.Arguments.parse(args); Assert.fail(Arrays.toString(args)); } catch (IllegalArgumentException expected) { } }

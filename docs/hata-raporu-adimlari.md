@@ -4,7 +4,7 @@ Bu açıklama **Uzak Sunucu** modu içindir. Java tanılama araçları, ping ve 
 
 **Hata Raporu Oluştur** butonuna basınca:
 
-1. **Sunucuya bağlanır.** Ekranda girdiğin kullanıcı adı ve parola kullanılır. Sunucu adresi ve JDK klasörü, JAR içine gömülü config'ten okunur.
+1. **Sunucuya bağlanır.** Ekranda girdiğin kullanıcı adı ve parola kullanılır. Sunucu adresi admin ekranında kaydedilen değerden, kayıt yoksa gömülü config'ten alınır. JDK keşif ayarı gömülü config'tedir; açık --host/--config operatör override'ı kayıtlı adresten önce gelir.
 
 2. **Geçici çalışma klasörü açar.** Sunucuda önce `C:\Temp`, alan veya erişim uygun değilse `D:\Temp` denenir. Her rapor için ayrı bir iş klasörü oluşturulur. Config'teki başlangıç beklemesi uygulanır; mevcut değer 10 saniyedir.
 
@@ -30,7 +30,7 @@ Bu açıklama **Uzak Sunucu** modu içindir. Java tanılama araçları, ping ve 
 
 Bir JVM'den veya COM portundan veri alınamazsa nedeni kaydedilir ve diğer hedefler denenir. Eksik veri içeren rapor **PARTIAL** olarak işaretlenebilir. Hedef Java uygulamaları sonlandırılmaz, yeniden başlatılmaz ve zorla GC çalıştırılmaz. İşlemler arka planda yürütülür; arayüz kullanılabilir kalır.
 
-**Diğer düğmeler:** “Java Süreçlerini Listele” yalnız keşif yapar; ping, seri port ve BAT işlemlerini çalıştırmaz. “Çıktı Klasörünü Aç” bu bilgisayardaki rapor klasörünü açar. “Logları Temizle” yalnız ekrandaki günlüğü ve süreç tablosunu temizler.
+**Ekranlar:** Normal JAR açılışında yalnız kullanıcı adı/parola ve “Hata Raporu Oluştur”/“Çıktı Klasörünü Aç” vardır; teknik günlük ve süreç listesi gösterilmez. `java -jar java-diagnostic-collector.jar --admin` ayrıntılı ekranı açar. Admin ekranında IP girilip “Sunucu IP'sini Kaydet” ile aynı Windows hesabının sonraki açılışlarına kaydedilir; yalnız adres saklanır. “Java Süreçlerini Listele” yalnız keşif yapar; ping, seri port ve BAT çalıştırmaz. “Logları Temizle” admin ekranındaki günlüğü ve süreç tablosunu temizler. “Çıktı Klasörünü Aç” her iki ekranda bu bilgisayarın rapor klasörünü açar.
 
 ## Windows sunucusunda ek sorgular
 
