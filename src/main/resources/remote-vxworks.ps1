@@ -24,7 +24,11 @@ $probe.tatlYaz=[pscustomobject]@{attempted=$false;collected=$false;artifact=$nul
 $probe.diagnostics=@();$probe.versionConfirmed=$false
 function Save-Json([string]$path,$value){[IO.File]::WriteAllText($path,($value|ConvertTo-Json -Depth 12),$utf8)}
 function Artifact([string]$name){return ('vxworks/ports/port-'+$portName+'/'+$name.Replace('\','/'))}
-function Progress([string]$message){Save-Json (Join-Path $serialJobRoot 'progress.json') @{jobId=$serialJobId;phase='serial-all-tasks';message=$message}}
+function Progress([string]$message){
+    $entry=[ordered]@{timestampUtc=[DateTime]::UtcNow.ToString('o');source=$portName;message=('[VxWorks] '+$message)}
+    [IO.File]::AppendAllText((Join-Path $serialJobRoot ('activity-'+$portName+'.jsonl')),(($entry|ConvertTo-Json -Compress)+"`n"),$utf8)
+    Save-Json (Join-Path $serialJobRoot 'progress.json') @{jobId=$serialJobId;phase='serial-all-tasks';message=$message}
+}
 function Check-Limits {
     if(Test-Path -LiteralPath (Join-Path $serialJobRoot 'cancel.txt')){throw 'REMOTE_CANCELLED'}
     if($portWatch.Elapsed.TotalSeconds -gt $config.portTimeoutSeconds){throw 'SERIAL_PORT_TOTAL_TIMEOUT'}
@@ -32,11 +36,11 @@ function Check-Limits {
 }
 function Is-Prompt([string]$body){return ($body -match '(?m)(?:^|[\r\n])[ \t]*->[ \t]*(?:\r?$|\S)' -or $body -match '(?im)(?:^|[\r\n])[ \t]*\[vxWorks[^\]\r\n]*\]#[ \t]*')}
 function Remove-Pagers([string]$body){return [regex]::Replace($body,'(?i)Type\s*<CR>\s*to continue,[^\r\n]*?to stop:[ \t]*',"`r`n")}
-function Read-Response([int]$timeoutMillis=10000){
+function Read-Response([int]$timeoutMillis=10000,[int]$postPromptMillis=0){
     $script:lastResponse=''
     $watch=[Diagnostics.Stopwatch]::StartNew();$builder=New-Object Text.StringBuilder
-    $lastData=0;$promptAt=-1;$lastPromptIndex=-1;$handledPagerEnd=-1;$pages=0
-    while($watch.ElapsedMilliseconds -lt $timeoutMillis){
+    $lastData=0;$promptAt=-1;$firstPromptAt=-1;$lastPromptIndex=-1;$handledPagerEnd=-1;$pages=0;$readBudget=$timeoutMillis
+    while($watch.ElapsedMilliseconds -lt $readBudget){
         Check-Limits
         $part=$serial.ReadExisting()
         if($part){
@@ -45,7 +49,15 @@ function Read-Response([int]$timeoutMillis=10000){
         }
         $body=$builder.ToString();$script:lastResponse=$body
         $prompts=[regex]::Matches($body,'(?im)(?:^|[\r\n])[ \t]*(?:->[ \t]*(?:\r?$|\S)|\[vxWorks[^\]\r\n]*\]#[ \t]*)')
-        if($prompts.Count -and $prompts[$prompts.Count-1].Index -ne $lastPromptIndex){$lastPromptIndex=$prompts[$prompts.Count-1].Index;$promptAt=$watch.ElapsedMilliseconds;$script:pagerActive=$false}
+        if($prompts.Count -and $prompts[$prompts.Count-1].Index -ne $lastPromptIndex){
+            $lastPromptIndex=$prompts[$prompts.Count-1].Index;$promptAt=$watch.ElapsedMilliseconds;$script:pagerActive=$false
+            if($firstPromptAt -lt 0){
+                $firstPromptAt=$promptAt
+                # The command still has its original response timeout. After a
+                # prompt arrives, TatlYaz gets a bounded window for late logs.
+                if($postPromptMillis -gt 0){$readBudget=[Math]::Max($readBudget,$firstPromptAt+$postPromptMillis+500)}
+            }
+        }
         $pagers=[regex]::Matches($body,'(?i)Type\s*<CR>\s*to continue,[^\r\n]*to stop:')
         if($pagers.Count){
             $lastPager=$pagers[$pagers.Count-1]
@@ -54,7 +66,7 @@ function Read-Response([int]$timeoutMillis=10000){
                 $script:pagerActive=$true;$serial.Write("`r");$handledPagerEnd=$lastPager.Index+$lastPager.Length;$promptAt=-1
             }
         }
-        if(!$script:pagerActive -and $promptAt -ge 0 -and (($watch.ElapsedMilliseconds-$lastData -ge 150) -or ($watch.ElapsedMilliseconds-$promptAt -ge 400))){return $body}
+        if(!$script:pagerActive -and $promptAt -ge 0 -and $watch.ElapsedMilliseconds-$firstPromptAt -ge $postPromptMillis -and (($watch.ElapsedMilliseconds-$lastData -ge 150) -or ($watch.ElapsedMilliseconds-$promptAt -ge 400))){return $body}
         Start-Sleep -Milliseconds 25
     }
     throw 'SERIAL_RESPONSE_TIMEOUT: no completed prompt; further commands stopped'
@@ -65,12 +77,15 @@ function Run-Command([string]$command,[string]$artifact){
     $path=Join-Path $portRoot $artifact
     [void][IO.Directory]::CreateDirectory((Split-Path $path -Parent))
     $consoleWriter.WriteLine("`r`n[COLLECTOR COMMAND: $command]")
-    $op=[ordered]@{command=$command;artifact=(Artifact $artifact);startedAtUtc=[DateTime]::UtcNow.ToString('o');durationMillis=0;returnedPrompt=$false;unsupported=$false;frameCount=0;error=$null}
+    $captureMillis=if($command -ceq 'TatlYaz'){3000}else{0}
+    $op=[ordered]@{command=$command;artifact=(Artifact $artifact);startedAtUtc=[DateTime]::UtcNow.ToString('o');durationMillis=0;postPromptCaptureMillis=$captureMillis;returnedPrompt=$false;unsupported=$false;frameCount=0;error=$null}
     $watch=[Diagnostics.Stopwatch]::StartNew();$response=''
     try{
         Check-Limits
+        Progress ($portName+' | '+$command+' | BASLADI; cihaz yaniti bekleniyor.')
         $serial.Write($command+"`r")
-        $response=Read-Response ([int]$config.commandTimeoutSeconds*1000)
+        if($captureMillis){Progress ($portName+': TatlYaz yaniti ve ardindan 3 saniyelik ek log ciktisi bekleniyor...')}
+        $response=Read-Response ([int]$config.commandTimeoutSeconds*1000) $captureMillis
         $op.returnedPrompt=Is-Prompt $response
         $op.unsupported=$response -match '(?i)unknown symbol name|undefined symbol|syntax error'
         $op.frameCount=[regex]::Matches((Remove-Pagers $response),'(?im)^\s*0x[0-9a-f]+\s+').Count
@@ -84,6 +99,8 @@ function Run-Command([string]$command,[string]$artifact){
         if($response){[IO.File]::WriteAllText($path,$response,$utf8)}
         $probe.commands+=,[pscustomobject]$op
         Save-Json (Join-Path $portRoot 'commands.json') $probe.commands
+        $outcome=if($op.error){'BASARISIZ: '+$op.error}elseif($op.unsupported){'DESTEKLENMIYOR: cihaz simge/sozdizimi hatasi bildirdi.'}elseif($op.returnedPrompt){'YANIT ALINDI; konsol istemi geri dondu.'}else{'YANIT TAMAMLANMADI.'}
+        Progress ($portName+' | '+$command+' | '+$outcome+' | sure '+$op.durationMillis+' ms | '+$(if($response){'ham log: '+$op.artifact}else{'yanit yok; ham log olusmadi.'}))
     }
 }
 function Collect-Diagnostic([string]$command,[string]$artifact){
@@ -96,7 +113,10 @@ function Collect-Diagnostic([string]$command,[string]$artifact){
         $entry.collected=($op.returnedPrompt -and !$entry.error)
         return $response
     }catch{$entry.error=$_.Exception.Message;throw}
-    finally{$probe.diagnostics+=,$entry}
+    finally{
+        $probe.diagnostics+=,$entry
+        Progress ($portName+' | '+$command+' | tanilama sonucu: '+$(if($entry.collected){'YANIT KAYDEDILDI'}else{'ALINAMADI: '+$entry.error}))
+    }
 }
 function Parse-Identity([string]$body,[string]$command,[string]$artifact){
     $body=Remove-Pagers $body
@@ -150,14 +170,18 @@ function Trace-Error([string]$response,[int]$frames){
     return $null
 }
 try{
+    Progress ($portName+' | Seri port aciliyor: '+$config.baudRate+' baud, '+$config.dataBits+' veri biti, parity '+$config.parity+'.')
     $serial.Open();$probe.opened=$true
+    Progress ($portName+' | Seri port acildi; VxWorks konsol istemi kontrol ediliyor.')
     $serial.Write("`r");$probe.status='NO_VXWORKS_PROMPT';$initial=Read-Response ([Math]::Min(5000,$config.commandTimeoutSeconds*1000))
     if(!(Is-Prompt $initial)){throw 'VXWORKS_PROMPT_NOT_CONFIRMED'}
     $probe.vxworksPrompt=$true
+    Progress ($portName+' | Konsol istemi alindi; version ile VxWorks surumu dogrulaniyor.')
     $probe.status='COLLECTING'
     $versionReply=Collect-Diagnostic 'version' 'diagnostics\version.txt'
     $probe.versionConfirmed=(!$probe.diagnostics[-1].unsupported -and $versionReply -match '(?im)^\s*VxWorks\b[^\r\n]*(?:\bversion\b|\b[5-9]\.\d)')
     if(!$probe.versionConfirmed){throw 'VXWORKS_VERSION_NOT_CONFIRMED: no VxWorks version banner; further commands stopped'}
+    Progress ($portName+' | VxWorks surumu dogrulandi.')
     Progress ($portName+': once cihaz IP/MAC ve arayuz bilgileri aliniyor...')
     foreach($identityCommand in @('ifconfig','ifShow')){
         $identityArtifact='network\identity-'+$identityCommand+'.txt'
@@ -178,6 +202,7 @@ try{
     Progress ($portName+': guncel i task listesi aliniyor...')
     $taskList=Run-Command 'i' 'i-before.txt'
     $probe.tasks=@(Parse-Tasks $taskList);$probe.initialTaskCount=$probe.tasks.Count
+    Progress ($portName+' | Ilk task listesi alindi: '+$probe.initialTaskCount+' task; her biri icin tt ve ti ayri calistirilacak.')
     if(!$probe.initialTaskCount){throw 'TASK_LIST_PARSE_EMPTY: no TASKID could be verified'}
     if($probe.initialTaskCount -gt 4096){throw 'TASK_LIST_LIMIT: more than 4096 tasks'}
     Save-Json (Join-Path $portRoot 'task-index.json') $probe.tasks
@@ -193,6 +218,7 @@ try{
             $nativeError=Trace-Error $trace $task.frameCount
             if($nativeError){$task.error=$nativeError}elseif($last.unsupported){$task.error='TASK_TRACE_UNSUPPORTED'}
             if($task.frameCount -gt 0){$probe.tracesWithFrames++}
+            Progress ($portName+' | tt '+$task.taskId+' | task '+$task.name+' | frame='+$task.frameCount+' | '+$(if($task.error){$task.error}else{'STACK ALINDI'}))
             $task.infoAttempted=$true;$probe.attemptedTaskInfoCount++
             $task.infoArtifact=Artifact ('tasks\ti-'+$task.taskId+'.txt')
             Progress ($portName+': ti '+$index+'/'+$probe.initialTaskCount+' ('+$task.taskId+', '+$task.name+')')
@@ -204,6 +230,7 @@ try{
                 elseif(!$task.infoError -and !@((Parse-Tasks $info)|Where-Object{$_.taskId -eq $task.taskId}).Count){$task.infoError='TASK_INFO_NOT_CONFIRMED: matching TASKID missing in response'}
                 $task.infoCollected=($infoOp.returnedPrompt -and !$task.infoError)
                 if($task.infoCollected){$probe.taskInfosCollected++}
+                Progress ($portName+' | ti '+$task.taskId+' | '+$(if($task.infoCollected){'TASKID DOGRULANDI; task ayrintisi alindi.'}else{'TASK AYRINTISI ALINAMADI: '+$task.infoError}))
             }catch{$task.infoError=$_.Exception.Message;throw}
         }finally{Save-Json (Join-Path $portRoot 'task-index.json') $probe.tasks}
     }
@@ -248,8 +275,20 @@ try{
     if(!$probe.opened){$probe.status='OPEN_FAILED'}elseif($probe.timedOut -and $probe.vxworksPrompt){$probe.status='TIMED_OUT'}elseif($probe.vxworksPrompt){$probe.status='FAILED'}
 }
 finally{
-    if($serial.IsOpen){if($pagerActive){try{$serial.Write("Q`r")}catch{}};$serial.Close()}
-    $serial.Dispose();$consoleWriter.Dispose()
+    # Closing a failing/disconnected serial adapter must not skip file disposal.
+    try{if($serial.IsOpen){if($pagerActive){try{$serial.Write("Q`r")}catch{}};$serial.Close()}}
+    catch{$probe.error=([string]$probe.error+'; SERIAL_CLOSE_FAILED: '+$_.Exception.Message).TrimStart('; ');$probe.success=$false;if($probe.status -eq 'COLLECTED'){$probe.status='PARTIAL'}}
+    finally{
+        try{$serial.Dispose()}
+        catch{$probe.error=([string]$probe.error+'; SERIAL_DISPOSE_FAILED: '+$_.Exception.Message).TrimStart('; ');$probe.success=$false;if($probe.status -eq 'COLLECTED'){$probe.status='PARTIAL'}}
+        finally{$consoleWriter.Dispose()}
+    }
     Save-Json (Join-Path $portRoot 'port-result.json') $probe
+    foreach($requested in @('time','moduleShow')){
+        if(!@($probe.commands|Where-Object{$_.command -ceq $requested}).Count){
+            Progress ($portName+' | '+$requested+' | CALISTIRILMADI: '+$(if($probe.error){$probe.error}else{'bu tanilama adimina ulasilamadi.'}))
+        }
+    }
+    Progress ($portName+' | PORT TAMAMLANDI: '+$probe.status+' | tt frame alinan '+$probe.tracesWithFrames+'/'+$probe.initialTaskCount+' | ti '+$probe.taskInfosCollected+'/'+$probe.initialTaskCount+' | '+$probe.error)
 }
 [pscustomobject]$probe|ConvertTo-Json -Depth 12 -Compress

@@ -8,11 +8,12 @@ public class ProcessReportTest {
     @Rule public TemporaryFolder temp=new TemporaryFolder();
     @Test public void processIndexConnectsApplicationPidAndActualDumpFilesAndIsHashed()throws Exception {
         Manifest m=new Manifest();JavaProcessInfo p=new JavaProcessInfo();p.pid=6900;p.processName="java.exe";p.applicationName="operator-app.jar";
-        JvmReport j=new JvmReport(p);j.dumpCount=3;m.jvms.add(j);
+        JvmReport j=new JvmReport(p);j.dumpCount=3;j.selectedDumpTool="C:/Java/jdk8/bin/jcmd.exe";p.architecture="x86";m.jvms.add(j);
         Operation op=new Operation();op.type="thread-dump";op.sample=1;op.success=true;op.artifact="jvms/java.exe-6900/sample-1.txt";j.operations.add(op);
         new DiagnosticReportGenerator().write(m,temp.getRoot().toPath());
         String text=new String(Files.readAllBytes(temp.getRoot().toPath().resolve("java-surecleri.txt")),StandardCharsets.UTF_8);
         Assert.assertTrue(text.contains("PID 6900 — operator-app.jar"));Assert.assertTrue(text.contains(op.artifact));
+        Assert.assertTrue(text.contains("Mimari: x86"));Assert.assertTrue(text.contains("Seçilen dump aracı: "+j.selectedDumpTool));
         Assert.assertTrue(m.files.stream().anyMatch(f->f.path.equals("java-surecleri.txt")&&f.sha256!=null));
     }
     @Test public void missingNameIsExplicitAndJarFallbackUsesOnlyFilename() {

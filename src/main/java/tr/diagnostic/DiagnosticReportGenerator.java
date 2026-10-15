@@ -13,6 +13,7 @@ public final class DiagnosticReportGenerator {
         public String reportId;
         public String startedAt = Instant.now().toString();
         public String completedAt;
+        public ReportClock timing = new ReportClock(startedAt);
         public String collectionStatus;
         public String collectorJavaVersion = System.getProperty("java.version");
         public long collectorPid = ProcessScanner.currentPid();
@@ -21,6 +22,7 @@ public final class DiagnosticReportGenerator {
         public String transport;
         public com.google.gson.JsonObject ping;
         public com.google.gson.JsonObject vxworks;
+        public com.google.gson.JsonObject toolDiscovery;
         public ProcessScanner.ScanResult discovery;
         public List<JvmReport> jvms = new ArrayList<>();
         public List<ExcludedJvm> excludedJvms = new ArrayList<>();
@@ -43,6 +45,7 @@ public final class DiagnosticReportGenerator {
         public JavaProcessInfo process;
         public int requestedDumpCount = 3;
         public int dumpCount;
+        public String selectedDumpTool;
         public List<Operation> operations = new ArrayList<>();
         public JvmReport(JavaProcessInfo process) { this.process = process; }
     }
@@ -52,6 +55,7 @@ public final class DiagnosticReportGenerator {
         public String completedAt;
         public int sample;
         public List<String> command;
+        public String toolHome, toolArchitecture, toolJavaVersion, toolVendor;
         public String workingDirectory;
         public String executionMode;
         public Integer sessionId;
@@ -82,6 +86,7 @@ public final class DiagnosticReportGenerator {
     }
     public void write(Manifest manifest, Path staging) throws IOException {
         writeProcessIndex(manifest, staging.resolve("java-surecleri.txt"));
+        manifest.timing.write(manifest, staging);
         manifest.files.clear();
         try (java.util.stream.Stream<Path> paths = Files.walk(staging)) {
             Iterator<Path> it = paths.filter(Files::isRegularFile).sorted().iterator();
@@ -115,11 +120,13 @@ public final class DiagnosticReportGenerator {
                 .append("  Süreç: ").append(line(p.processName)).append(" | Ana sınıf/JAR: ").append(line(p.mainClass)).append('\n')
                 .append("  Sahip: ").append(line(p.owner)).append(" | Oturum: ").append(p.sessionId).append('\n')
                 .append("  Başlangıç (UTC): ").append(line(p.startTime)).append('\n');
+            text.append("  Java sürümü: ").append(line(p.javaVersion)).append(" | Mimari: ").append(line(p.architecture)).append('\n');
             JvmReport report = manifest.jvms.stream().filter(j -> j.process.pid == p.pid).findFirst().orElse(null);
             if (p.collectorProcess) text.append("  Collector; rapor hedefinden hariç.\n");
             else if (report == null) text.append("  Bu süreç için dump toplama kaydı yok.\n");
             else {
                 text.append("  Başarılı dump: ").append(report.dumpCount).append("/3\n");
+                text.append("  Seçilen dump aracı: ").append(line(report.selectedDumpTool)).append('\n');
                 for (Operation op : report.operations) {
                     if (op.success && "thread-dump".equals(op.type)) text.append("  Dump ").append(op.sample).append(": ").append(line(op.artifact)).append('\n');
                     else if (!op.success) text.append("  Hata (").append(line(op.type)).append(", örnek ").append(op.sample).append("): ").append(line(op.error)).append('\n');

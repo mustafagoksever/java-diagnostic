@@ -8,9 +8,10 @@ public final class CollectorConfiguration {
     public String mode = "remote";
     public String remoteHost = "15.30.9.176";
     public String remoteUsername = "";
-    public String remoteJdkHome = "C:/Program Files/Java/jdk1.8.0_281";
+    public String remoteJdkHome = "auto";
     public int remoteTimeoutSeconds = 1800;
     public String remoteWorkShare = "auto";
+    public boolean remoteWindowsDiagnostics = true;
     public String remoteBeforeLogCopyBatch = "";
     public int remoteBeforeLogCopyTimeoutSeconds = 120;
     public int remoteBeforeLogCopyDelaySeconds = 30;

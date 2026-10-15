@@ -45,8 +45,13 @@ public class ConfigurationManagerTest {
     @Test public void defaultsToRemoteAndRejectsCredentialsInConfiguration() throws Exception {
         CollectorConfiguration c = load("remote: {host: '15.30.9.176', jdkHome: 'C:/Java/jdk8'}\nlogs: []\n");
         Assert.assertEquals("remote", c.mode); Assert.assertEquals("", c.remoteUsername);
+        Assert.assertEquals("auto",load("logs: []\n").remoteJdkHome);
+        Assert.assertEquals("auto",load("remote: {jdkHome: auto}\n").remoteJdkHome);
         Assert.assertEquals("15.30.9.176", c.remoteHost);
         Assert.assertEquals("auto", c.remoteWorkShare);
+        Assert.assertTrue(c.remoteWindowsDiagnostics);
+        Assert.assertFalse(load("remote: {windowsDiagnostics: false}\n").remoteWindowsDiagnostics);
+        try{load("remote: {windowsDiagnostics: maybe}\n");Assert.fail("Invalid diagnostics flag accepted");}catch(IOException expected){}
         Assert.assertEquals("Temp",load("remote: {workShare: Temp}\n").remoteWorkShare);
         try{load("remote: {workShare: '../wrong'}\n");Assert.fail("Invalid share name accepted");}catch(IOException expected){}
         for (String yaml : new String[]{"remote: {password: secret}", "remote: {username: Administrator}", "mode: unsupported", "remote: {host: 'bad/host'}", "remote: {jdkHome: relative}", "remote: {timeoutSeconds: 0}"}) {

@@ -37,6 +37,11 @@ public class ProcessScannerTest {
         JavaProcessInfo own = new JavaProcessInfo(); own.pid = ProcessScanner.currentPid();
         Assert.assertTrue("PID guard applies even without a classification flag", ProcessScanner.excludedFromCollection(own));
     }
+    @Test public void identityQueryHonorsTheRemainingToolBudget() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows());JavaProcessInfo p=new JavaProcessInfo();p.pid=42;p.startTicks="123";
+        CommandExecutor commands=(command,timeout,out,err)->{Assert.assertTrue(timeout<=75);CommandResult r=new CommandResult();r.exitCode=0;r.stdout="123";return r;};
+        Assert.assertNull(new ProcessScanner(new CollectorConfiguration(),commands).identityError(p,75));
+    }
     @Test public void explicitOwnPidCannotCauseAttachAndExclusionIsRecordedInManifest() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());
         CollectorConfiguration c = new CollectorConfiguration(); c.outputDirectory = temp.getRoot().toPath().resolve("reports"); c.resourceMonitoringSeconds = 0;

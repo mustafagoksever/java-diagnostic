@@ -20,7 +20,7 @@ public final class ProcessScanner {
     private final ToolResolver tools;
     public ProcessScanner(CollectorConfiguration config, CommandExecutor executor) {
         this.config = config; this.executor = executor;
-        this.powershell = new PowerShell(executor); this.tools = new ToolResolver(config);
+        this.powershell = new PowerShell(executor); this.tools = new ToolResolver(config, executor);
     }
     public ScanResult scan() throws IOException, InterruptedException {
         ScanResult result = new ScanResult();
@@ -40,6 +40,7 @@ public final class ProcessScanner {
                 result.windowsDiscoverySucceeded = true;
             } catch (RuntimeException e) { result.errors.add("Windows discovery JSON: " + e); }
         } else result.errors.add("Windows discovery: " + (windows.outputTruncated ? "output truncated" : windows.error()));
+        tools.prepare(result.processes);
         enrichFromJps(result);
         long self = currentPid();
         result.processes.removeIf(p -> "sun.tools.jps.Jps".equals(p.mainClass) || "jdk.jcmd/sun.tools.jps.Jps".equals(p.mainClass));
@@ -70,6 +71,7 @@ public final class ProcessScanner {
     static boolean excludedFromCollection(JavaProcessInfo process) {
         return process.pid == currentPid() || process.collectorProcess;
     }
+    ToolResolver tools() { return tools; }
     private void enrichFromJps(ScanResult result) throws IOException, InterruptedException {
         Optional<Path> jps = tools.find("jps", null);
         if (!jps.isPresent()) { result.errors.add("jps bulunamadı; Windows keşfi kullanılabilir."); return; }
@@ -91,11 +93,14 @@ public final class ProcessScanner {
     }
     /** Fail closed when creation time cannot be confirmed (PID reuse). */
     public String identityError(JavaProcessInfo process) throws IOException, InterruptedException {
+        return identityError(process, config.commandTimeoutSeconds * 1000L);
+    }
+    String identityError(JavaProcessInfo process, long budgetMillis) throws IOException, InterruptedException {
         if (process.pid <= 0 || process.startTicks == null) return "IDENTITY_UNVERIFIED: başlangıç zamanı yok; attach yapılmadı.";
         String script = "try { $p=Get-CimInstance Win32_Process -Filter 'ProcessId=" + process.pid + "'; if(!$p){ throw 'TARGET_EXITED' }; $date=$p.CreationDate } "
             + "catch { $p=Get-WmiObject Win32_Process -Filter 'ProcessId=" + process.pid + "'; if(!$p){ throw 'TARGET_EXITED' }; $date=$p.ConvertToDateTime($p.CreationDate) }; "
             + "$date.ToUniversalTime().Ticks.ToString()";
-        CommandResult r = powershell.run(script, config.commandTimeoutSeconds * 1000L);
+        CommandResult r = powershell.run(script, Math.max(1, Math.min(budgetMillis, config.commandTimeoutSeconds * 1000L)));
         if (!r.success()) return "IDENTITY_CHECK_FAILED: " + r.error();
         return process.startTicks.equals(r.stdout.trim()) ? null : "PID_REUSED: başlangıç zamanı değişti; attach yapılmadı.";
     }

@@ -46,11 +46,12 @@ public final class ConfigurationManager {
         if (!Arrays.asList("remote", "local").contains(c.mode)) throw new IOException("mode remote veya local olmalı.");
         if (root.containsKey("remote")) {
             Map<String, Object> remote = map(root.get("remote"), "remote");
-            keys(remote, "host", "jdkHome", "timeoutSeconds", "workShare", "beforeLogCopyBatch", "beforeLogCopyTimeoutSeconds", "beforeLogCopyDelaySeconds", "ping", "vxworks");
+            keys(remote, "host", "jdkHome", "timeoutSeconds", "workShare", "windowsDiagnostics", "beforeLogCopyBatch", "beforeLogCopyTimeoutSeconds", "beforeLogCopyDelaySeconds", "ping", "vxworks");
             c.remoteHost = string(remote, "host", c.remoteHost);
             c.remoteJdkHome = string(remote, "jdkHome", c.remoteJdkHome);
             c.remoteTimeoutSeconds = number(remote, "timeoutSeconds", 1800, 60, 7200);
             c.remoteWorkShare = string(remote, "workShare", "auto");
+            c.remoteWindowsDiagnostics = bool(remote, "windowsDiagnostics", true);
             if (!c.remoteWorkShare.matches("[A-Za-z0-9_. -]+\\$?") || c.remoteWorkShare.equals(".") || c.remoteWorkShare.equals("..")) throw new IOException("remote.workShare paylaşım adı veya auto olmalı; UNC yol olmamalı.");
             if (remote.containsKey("beforeLogCopyBatch")) {
                 Object value = remote.get("beforeLogCopyBatch");

@@ -44,6 +44,9 @@ public final class CollectionOrchestrator {
             ProcessScanner scanner = new ProcessScanner(config, executor);
             progress.accept("Windows Java süreçleri keşfediliyor...");
             m.discovery = scanner.scan(); m.errors.addAll(m.discovery.errors);
+            m.toolDiscovery = scanner.tools().inventory();
+            Files.createDirectories(staging.resolve("debug"));
+            DiagnosticReportGenerator.writeJson(staging.resolve("debug/jdk-discovery.json"), m.toolDiscovery);
             if (selectedPids != null) {
                 for (Long pid : selectedPids) if (m.discovery.processes.stream().noneMatch(p -> p.pid == pid)) m.errors.add("TARGET_NOT_DISCOVERED: PID " + pid);
             }

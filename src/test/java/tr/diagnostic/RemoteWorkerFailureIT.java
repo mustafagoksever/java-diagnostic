@@ -77,6 +77,7 @@ public class RemoteWorkerFailureIT {
             try(RemoteConnection connection=connection()){workerSettings=new RemoteCollectionOrchestrator(c).settings("collect",null,connection);}
             // Avoid enriching the empty fixture with unrelated JVMs from jps.
             workerSettings.addProperty("jdkHome",job.resolve("missing-jdk").toString());
+            write(job.resolve("jdk-discovery.ps1"),PowerShell.resource("jdk-discovery.ps1")+"\nfunction Get-JdkInventory {param($roots,$targets)[pscustomobject]@{candidates=@();plans=@();notes=@()}}\n");
             JsonObject result = execute(job, workerSettings);
             for (JsonElement error : result.getAsJsonArray("errors")) {
                 Assert.assertTrue(result.toString(), error.isJsonPrimitive() && error.getAsJsonPrimitive().isString());
@@ -95,12 +96,18 @@ public class RemoteWorkerFailureIT {
             } finally { Arrays.fill(password, '\0'); FileSupport.deleteTree(local); }
         } finally { FileSupport.deleteTree(job); }
     }
-    @Test public void failedJcmdStartFallsBackToJstackAndContinuesCopyingLogs() throws Exception {
+    @Test public void failedJcmdStartUsesNextJdkAndContinuesCopyingLogs() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());
         Path job = job();
         try (WindowsAttachIT.Fixture fixture = new WindowsAttachIT.Fixture(false)) {
             Path invalid = Files.createDirectories(job.resolve("invalid-jdk/bin"));
             Files.write(invalid.resolve("jcmd.exe"), "not an executable".getBytes(StandardCharsets.UTF_8));
+            Files.copy(jdk().resolve("bin/java.exe"),invalid.resolve("java.exe"));
+            Files.copy(jdk().resolve("release"),invalid.getParent().resolve("release"));
+            // Metadata points to a broken target-associated JDK; the actual
+            // fixture keeps running under its own valid JDK. No fake EXE runs.
+            String scanner="$scan=(& {\n"+PowerShell.resource("process-scan.ps1")+"\n})|ConvertFrom-Json;foreach($p in $scan.processes){if($p.pid -eq "+fixture.pid+"){$p.executablePath='"+invalid.resolve("java.exe").toString().replace("'","''")+"'}};$scan|ConvertTo-Json -Depth 8 -Compress";
+            write(job.resolve("process-scan.ps1"),scanner);
             Path source = Files.write(job.resolve("source.log"), "ERROR fixture".getBytes(StandardCharsets.UTF_8));
             CollectorConfiguration c = config(job);
             CollectorConfiguration.LogDirectory log = new CollectorConfiguration.LogDirectory();
@@ -118,6 +125,8 @@ public class RemoteWorkerFailureIT {
                 if ("thread-dump".equals(op.get("type").getAsString()) && op.get("success").getAsBoolean()) fallback++;
             }
             Assert.assertEquals(3,fallback);
+            Assert.assertTrue(jvm.getAsJsonArray("operations").toString().contains("invalid-jdk"));
+            Assert.assertFalse(jvm.get("selectedDumpTool").getAsString().contains("invalid-jdk"));
             Assert.assertTrue(Files.isRegularFile(job.resolve("data/logs/fixture/source.log")));
             Assert.assertTrue(fixture.process.isAlive());
             for (JsonElement error : result.getAsJsonArray("errors")) Assert.assertFalse(error.toString(),error.toString().contains("No process is associated"));
@@ -140,7 +149,7 @@ public class RemoteWorkerFailureIT {
         } finally { FileSupport.deleteTree(job); }
     }
     private static CollectorConfiguration config(Path job) {
-        CollectorConfiguration c=new CollectorConfiguration();c.installationPath=job.toString();c.applicationPath=".";
+        CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.installationPath=job.toString();c.applicationPath=".";
         c.resourceMonitoringSeconds=0;c.collectionDelaySeconds=0;c.collectGcStats=false;c.remoteTimeoutSeconds=120;c.commandTimeoutSeconds=10;
         return c;
     }
@@ -148,7 +157,7 @@ public class RemoteWorkerFailureIT {
     private static RemoteConnection connection() {return new RemoteConnection("localhost","test\\user",jdk().toString(),"unused-secret".toCharArray());}
     private static Path job() throws Exception {
         Path job=Paths.get("C:/Temp","diagnostic-remote-"+UUID.randomUUID());Files.createDirectories(job);FileSupport.restrictDirectory(job);
-        for(String resource:Arrays.asList("remote-worker.ps1","process-scan.ps1","system-info.ps1","resource-monitor.ps1"))write(job.resolve(resource),PowerShell.resource(resource));
+        for(String resource:Arrays.asList("remote-worker.ps1","process-scan.ps1","system-info.ps1","resource-monitor.ps1","jdk-discovery.ps1"))write(job.resolve(resource),PowerShell.resource(resource));
         return job;
     }
     private static void write(Path path,String text) throws Exception {

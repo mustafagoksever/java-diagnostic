@@ -27,14 +27,15 @@ catch {
 $denied = 0
 $found = New-Object System.Collections.Generic.List[object]
 foreach ($p in $all) {
+    $jvmLibraryPath=$null
     $isJava = $p.Name -match '^(java|javaw|javaws|j9)\.exe$' -or $additionalNames -contains $p.Name
     $discovery = $source + ':name'
-    if (!$isJava) {
+    if (!$isJava -or $p.Name -notmatch '^(java|javaw|javaws|j9)\.exe$') {
         try {
             $native = Get-Process -Id $p.ProcessId -ErrorAction Stop
             foreach ($module in $native.Modules) {
                 if ($module.ModuleName -ieq 'jvm.dll' -or $module.ModuleName -ieq 'j9vm29.dll') {
-                    $isJava = $true; $discovery = $source + ':module'; break
+                    $isJava = $true; $jvmLibraryPath=$module.FileName; $discovery = $source + ':module'; break
                 }
             }
         } catch { $denied++ }
@@ -71,7 +72,7 @@ foreach ($p in $all) {
     $found.Add([pscustomobject]@{
         pid = [long]$p.ProcessId; processName = $p.Name; owner = $owner; ownerError = $ownerError
         sessionId = [int]$p.SessionId; startTime = $startTime; startTicks = $startTicks
-        executablePath = $p.ExecutablePath; javaVersion = $version
+        executablePath = $p.ExecutablePath; jvmLibraryPath=$jvmLibraryPath; javaVersion = $version
         mainClass = $launchIdentity.mainClass; applicationName = $launchIdentity.applicationName
         versionSource = $(if ($version) { 'executable-product-version (best effort)' } else { 'unknown' })
         discoverySource = $discovery

@@ -74,7 +74,10 @@ public class RemoteBeforeLogCopyIT {
         Path source=Files.createTempDirectory("diagnostic bat source & ");
         Files.createDirectories(job);FileSupport.restrictDirectory(job);
         try {
-            for(String resource:Arrays.asList("remote-worker.ps1","remote-batch.ps1","process-scan.ps1","system-info.ps1","resource-monitor.ps1"))writeScript(job.resolve(resource),PowerShell.resource(resource));
+            for(String resource:Arrays.asList("remote-worker.ps1","remote-batch.ps1","process-scan.ps1","system-info.ps1","resource-monitor.ps1","jdk-discovery.ps1"))writeScript(job.resolve(resource),PowerShell.resource(resource));
+            // This BAT fixture deliberately has no diagnostic tools. Automatic
+            // discovery must not enrich it with or attach to unrelated JVMs.
+            writeScript(job.resolve("jdk-discovery.ps1"),PowerShell.resource("jdk-discovery.ps1")+"\nfunction Get-JdkInventory {param($roots,$targets)[pscustomobject]@{candidates=@();plans=@();notes=@()}}\n");
             writeScript(job.resolve("process-scan.ps1"),"'{\"processes\":[],\"errors\":[],\"elevated\":false}'");
             boolean taskScenario=scenario.equals("interactive-task")||scenario.equals("interactive-timeout")||scenario.equals("interactive-cancel");
             JsonObject interactiveIdentity=null;
@@ -100,7 +103,7 @@ public class RemoteBeforeLogCopyIT {
                 // CMD BAT has no UTF-8 BOM; only ASCII content is needed here.
                 Files.write(log.resolve("kaydal.bat"),body.getBytes(StandardCharsets.US_ASCII));
             }
-            CollectorConfiguration c=new CollectorConfiguration();c.installationPath=source.toString();c.applicationPath="auto";c.resourceMonitoringSeconds=0;c.collectGcStats=false;
+            CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.installationPath=source.toString();c.applicationPath="auto";c.resourceMonitoringSeconds=0;c.collectGcStats=false;
             c.remoteBeforeLogCopyBatch="Log/kaydal.bat";c.remoteBeforeLogCopyTimeoutSeconds=scenario.contains("timeout")?1:10;
             c.remoteBeforeLogCopyDelaySeconds=scenario.equals("delay")?30:0;
             CollectorConfiguration.LogDirectory spec=new CollectorConfiguration.LogDirectory();spec.sourcePath="Log";spec.base="application";spec.destination="fixture";spec.extensions.add(".log");spec.modifiedWithinHours=0;c.logs.add(spec);

@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 public final class RemotePowerShellTransport implements RemoteTransport {
     static final List<String> HELPER_RESOURCES = Collections.unmodifiableList(Arrays.asList(
         "remote-worker.ps1", "remote-batch.ps1", "process-scan.ps1", "system-info.ps1", "resource-monitor.ps1",
-        "remote-extras.ps1", "remote-ping.ps1", "remote-vxworks.ps1"));
+        "remote-extras.ps1", "remote-ping.ps1", "remote-vxworks.ps1", "jdk-discovery.ps1", "remote-windows.ps1"));
     @Override public JsonObject execute(JsonObject settings, Path staging, RemoteConnection connection, Consumer<String> progress) throws IOException, InterruptedException {
         if (!PowerShell.isWindows()) throw new IOException("Uzak toplama Windows üzerinde çalışmalıdır.");
         String systemRoot = System.getenv("SystemRoot");

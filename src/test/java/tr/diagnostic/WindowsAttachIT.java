@@ -50,7 +50,13 @@ public class WindowsAttachIT {
             JvmReport report = new JvmReport(p);
             new ThreadDumpCollector(config, new ProcessCommandExecutor(), scanner).collect(report, root, s -> { });
             Assert.assertEquals(0, report.dumpCount);
-            Assert.assertEquals(6, report.operations.stream().filter(o -> o.type.equals("thread-dump")).count());
+            List<Operation> attempts=new ArrayList<>();for(Operation op:report.operations)if(op.type.equals("thread-dump"))attempts.add(op);
+            Assert.assertTrue(attempts.size()>=3&&attempts.size()<=18);
+            for(int sample=1;sample<=3;sample++){
+                final int number=sample;Assert.assertTrue(attempts.stream().anyMatch(o->o.sample==number));
+            }
+            Assert.assertTrue(attempts.stream().anyMatch(o->o.command!=null&&o.command.get(0).endsWith("jcmd.exe")));
+            Assert.assertTrue(attempts.stream().anyMatch(o->o.command!=null&&o.command.get(0).endsWith("jstack.exe")));
             for (Operation o : report.operations) if (!o.type.equals("gc-statistics")) { Assert.assertFalse(o.success); Assert.assertNotNull(o.error); }
             Assert.assertTrue("Disabled attach target is still alive", fixture.process.isAlive());
             writeEvidence("attach-disabled", p, report);
@@ -139,7 +145,7 @@ public class WindowsAttachIT {
         Assert.assertNotNull("Windows identity required", p.startTicks);
         JvmReport report = new JvmReport(p);
         new ThreadDumpCollector(config, new ProcessCommandExecutor(), scanner).collect(report, root, s -> { });
-        Assert.assertEquals(3, report.operations.stream().filter(o -> o.type.equals("thread-dump") && o.command != null && o.command.contains("Thread.print")).count());
+        Assert.assertEquals(3, report.operations.stream().filter(o -> o.type.equals("thread-dump")).map(o->o.sample).distinct().count());
         Assert.assertNull("External target still running with same identity", scanner.identityError(p));
         writeEvidence("external-pid-" + pid, p, report);
         Map<String, Object> context = new LinkedHashMap<>(); context.put("elevated", scan.elevated); context.put("collectorIdentity", scan.collectorIdentity); context.put("targetOwner", p.owner); context.put("targetSession", p.sessionId);

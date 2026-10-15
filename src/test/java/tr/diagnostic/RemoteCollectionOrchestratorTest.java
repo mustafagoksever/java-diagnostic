@@ -41,6 +41,11 @@ public class RemoteCollectionOrchestratorTest {
             CollectionOrchestrator.Result result = new RemoteCollectionOrchestrator(c, fake).collect(Collections.singleton(clientPid), zipPassword, connection, message -> { });
             Assert.assertEquals("remote", result.manifest.mode); Assert.assertEquals(1, result.manifest.jvms.size()); Assert.assertEquals(0, result.manifest.excludedJvms.size());
             try (ZipFile zip = new ZipFile(result.archive.toFile(), zipPassword)) {
+                try (InputStream input = zip.getInputStream(zip.getFileHeader("rapor-zamanlari.txt"))) {
+                    String text = new String(readAll(input), StandardCharsets.UTF_8);
+                    Assert.assertTrue(text.contains("2015-01-01T00:00:00Z")); Assert.assertTrue(text.contains("Collector JVM açılışı"));
+                    Assert.assertTrue(text.contains("Toplama başlangıcı (sunucu yerel): Bilinmiyor"));
+                }
                 try (InputStream input = zip.getInputStream(zip.getFileHeader("system-info.json"))) {
                     JsonObject json = JsonParser.parseReader(new InputStreamReader(input, StandardCharsets.UTF_8)).getAsJsonObject();
                     Assert.assertEquals("SERVER-ONLY", json.getAsJsonObject("serverUsage").get("serverName").getAsString());
@@ -48,6 +53,8 @@ public class RemoteCollectionOrchestratorTest {
                 }
                 try (InputStream input = zip.getInputStream(zip.getFileHeader("Manifest.json"))) {
                     String json = new String(readAll(input), StandardCharsets.UTF_8); Assert.assertFalse(json.contains("session-secret")); Assert.assertFalse(json.contains("SERVER\\\\user"));
+                    JsonObject manifest = JsonParser.parseString(json).getAsJsonObject(); Assert.assertTrue(manifest.getAsJsonObject("timing").has("clientPreparedAtUtc"));
+                    Assert.assertTrue(result.manifest.files.stream().anyMatch(f -> f.path.equals("rapor-zamanlari.txt") && f.sha256 != null));
                 }
             }
             try (java.util.stream.Stream<Path> files = Files.list(c.outputDirectory)) { Assert.assertEquals(1, files.count()); }

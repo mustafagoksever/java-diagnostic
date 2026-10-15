@@ -109,7 +109,7 @@ public final class Main {
             + "  collect (--all | --pid 123[,456]) [--config config.yaml]\n"
             + "          [--generate-password | --password-env NAME]\n"
             + "Mod: varsayılan remote. --local veya --remote; --host IP --user DOMAIN\\USER\n"
-            + "     --remote-jdk C:/Java/jdk8 --remote-password-env NAME\n"
+            + "     --remote-jdk auto|C:/Java/jdk8 --remote-password-env NAME\n"
             + "Çıkış kodları: 0 başarılı, 1 işlem hatası, 2 kullanım hatası, 3 kısmi rapor/keşif.");
     }
     static final class Arguments {

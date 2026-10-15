@@ -14,8 +14,14 @@ mode: remote
 # Kullanıcı adı ve parola burada YAZILMAZ; Swing ekranında oturumluk girilir.
 # CLI kullanıcı adı --user veya konsoldan; parola konsol veya ortamdan alınır.
 remote:
+  # Windows sunucusunda salt okunur IP/soket/rota/ARP, süreç/servis/sürücü,
+  # oturum, saat servisi ve son 48 saatten System/Application olaylarını toplar.
+  # Çıktı: ZIP içinde server/SONUC.txt; listeleme sırasında çalışmaz.
+  windowsDiagnostics: true
   host: '15.30.9.176'                         # Sunucu IPv4 adresi veya DNS adı.
-  jdkHome: 'C:/Program Files/Java/jdk1.8.0_281' # SUNUCUDA mevcut JDK kökü.
+  jdkHome: auto                              # SUNUCUDA JDK keşfi; PATH, JAVA_HOME, kayıt defteri ve hedef JVM klasörleri.
+  # Sabit aday örneği: jdkHome: 'C:/Program Files/Java/jdk1.8.0_281'
+  # PID'nin sürüm/mimari uyumu önce gelir; diğer uygun JDK'lar da denenebilir.
   timeoutSeconds: 1800                       # Tüm uzak toplama limiti, 60–7200 s.
   # Sunucudaki geçici işler önce C:/Temp, alan/erişim yoksa D:/Temp altındadır.
   # Başlangıçta en az 320 MiB gerekir (256 MiB rezerv + 64 MiB çalışma payı).
@@ -55,6 +61,7 @@ remote:
   # İstemden sonra version okunur; VxWorks sürüm başlığı yoksa başka komut gönderilmez.
   # i listesindeki her TASKID için tt 0xTASKID ve ti 0xTASKID denenir.
   # IP/MAC sorgusundan sonra, i listesinden önce TatlYaz bir kez gönderilir.
+  # TatlYaz istemi döndükten sonra 3 saniye daha okunur; geç gelen çıktı aynı dosyaya yazılır.
   # Çıktı: vxworks/ports/port-COM*/TatlYaz.txt; desteklenmezse hata kaydedilip devam edilir.
   # tt=stack trace; ti=task/stack/register ayrıntısı. Kernel korumaları aşılmaz.
   # Native trace/soket desteği yoksa neden kaydedilir ve rapor PARTIAL olabilir.
@@ -116,10 +123,12 @@ resourceMonitoringSeconds: 60
 # Gerçek zamanlar kaynak-izleme.csv dosyasında bulunur.
 resourceSampleIntervalSeconds: 1
 
-# jdkHomes: yerelde önce aranacak JDK kökleri; uzakta remote.jdkHome sonrası
-# sunucudaki ek JDK kökleri. []=ek kök yok; yerelde otomatik araç arama;
-# collector JDK'sı, JAVA_HOME ve PATH de kontrol edilir. JRE araç içermez.
-# Hedef JVM ile uyumlu JDK seçin. Örnek (aşağıdaki [] yerine):
+# jdkHomes: toplama yapılan bilgisayarda ek JDK aday kökleri. []=ek kök yok.
+# Yerel/uzak otomatik keşif hedef Java/jvm.dll, JAVA_HOME/JDK_HOME, PATH,
+# kayıt defteri ve vendor klasörlerini kullanır. Yerelde collector JDK'sı da eklenir.
+# PID'ye göre mimari/sürüm uyumu önce gelir; sıra kesin zorlaması değildir.
+# En fazla 3 uygun kök/örnek; ortak bütçe 2 x commandTimeoutSeconds.
+# Örnek (aşağıdaki [] yerine):
 # jdkHomes:
 #   - 'C:/Java/jdk8'
 #   - 'D:/PortableJava/jdk8'

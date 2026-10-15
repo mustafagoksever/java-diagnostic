@@ -66,6 +66,14 @@ public final class CollectorFrame extends JFrame {
     private void busy(boolean value) { collect.setEnabled(!value); list.setEnabled(!value); open.setEnabled(!value); mode.setEnabled(!value); username.setEnabled(!value); serverPassword.setEnabled(!value); progress.setIndeterminate(value); }
     private String userMessage(String value) { return value == null ? "Bilinmeyen hata" : value.replace(config.remoteHost, "[sunucu]").replace(config.remoteJdkHome, "[JDK]").replace(config.remoteJdkHome.replace('/', '\\'), "[JDK]"); }
     private void append(String value) { value = userMessage(value); activity.append(value + "\n"); activity.setCaretPosition(activity.getDocument().getLength()); status.setText(value); }
+    private void appendMessages(List<String> messages) {
+        if (messages.isEmpty()) return;
+        StringBuilder batch = new StringBuilder();
+        for (String message : messages) batch.append(userMessage(message)).append('\n');
+        activity.append(batch.toString());
+        activity.setCaretPosition(activity.getDocument().getLength());
+        status.setText(userMessage(messages.get(messages.size() - 1)));
+    }
     private void refresh() {
         final RemoteConnection remote;
         try { remote = connection(); } catch (Exception e) { failure(e); return; }
@@ -75,7 +83,7 @@ public final class CollectorFrame extends JFrame {
                 try { return remote == null ? new CollectionOrchestrator(config).list() : new RemoteCollectionOrchestrator(config).list(remote, this::publish); }
                 finally { if (remote != null) remote.close(); }
             }
-            @Override protected void process(List<String> messages) { for (String message : messages) append(message); }
+            @Override protected void process(List<String> messages) { appendMessages(messages); }
             @Override protected void done() {
                 busy(false);
                 try {
@@ -97,7 +105,7 @@ public final class CollectorFrame extends JFrame {
                 try { return remote == null ? new CollectionOrchestrator(config).collect(null, password, message -> publish(message)) : new RemoteCollectionOrchestrator(config).collect(null, password, remote, message -> publish(message)); }
                 finally { if (remote != null) remote.close(); }
             }
-            @Override protected void process(List<String> messages) { for (String message : messages) append(message); }
+            @Override protected void process(List<String> messages) { appendMessages(messages); }
             @Override protected void done() {
                 busy(false);
                 try {

@@ -1,8 +1,12 @@
 # Java 8 Windows Diagnostic Collector
 
+Uzak rapor ayrıca Windows sunucusunun IP/port/rota/ARP bilgilerini, süreç/servis/sürücü listesini, oturum ve saat servisi durumunu, son 48 saatten hata/uyarı olaylarını toplar. ZIP içinde önce `server/SONUC.txt` dosyasına bakın. `remote.windowsDiagnostics` varsayılan olarak açıktır; sorgular sunucuda çalışır, ayar değiştirmez. Ayrıntılar [adım adım açıklamada](docs/hata-raporu-adimlari.md) yer alır.
+
 Windows Java/OSGi donmalarını incelemek için hedef uygulamadan bağımsız JVM'de çalışan masaüstü/CLI aracı. Java 8, Maven, Swing, ProcessBuilder, NIO, SnakeYAML ve Zip4j kullanır. Web sunucusu, Spring, C# veya .NET bileşeni yoktur. Derlenmiş JAR çalışma sırasında internet bağlantısı istemez.
 
 Kısa kullanım açıklaması: [Hata Raporu Oluştur — Adım Adım](docs/hata-raporu-adimlari.md).
+
+Raporun ne zaman alındığını görmek için ZIP kökündeki **`rapor-zamanlari.txt`** dosyasını açın. Sunucu ve Collector bilgisayarının yerel/UTC saatleri, saat dilimleri, Collector açılışı, toplama başlangıcı, ZIP öncesi hazırlık bitişi ve geçen süreler yazılır. Ayrıntılı zaman verileri `Manifest.json/timing` içindedir. [Zaman kayıtları ve JDK otomatik keşif analizi](docs/remote-mode.md).
 
 ## Hızlı başlangıç
 
@@ -10,7 +14,7 @@ Kısa kullanım açıklaması: [Hata Raporu Oluştur — Adım Adım](docs/hata-
 
 JAR varsayılan olarak **yalnız gömülü ayarları** okur; yanındaki veya çalışma klasöründeki config dosyalarını otomatik kullanmaz. `--config` geliştirme/operatör için açık bir override olarak korunur. Gömme, normal kullanıcıya ayrı ayar dosyası vermeyi önler; JAR arşivini inceleyebilen kişi ayarları çıkarabilir. Sunucu giriş bilgileri gömülmez.
 
-**Varsayılan artık Uzak Sunucu modudur.** Ekranda yalnız kullanıcı adı ve sunucu parolası girilir; IP ve sunucu JDK yolu config'ten alınır, formda gösterilmez. Yerel toplama için Swing'den **Yerel Bilgisayar** veya CLI'den **`--local`** seçin. Uzak modda loglar/sistem ölçümleri sunucudan, ZIP çıktısı bu bilgisayardan gelir. [Uzak mod kurulum, kullanım ve test açıklaması](docs/remote-mode.md).
+**Varsayılan artık Uzak Sunucu modudur.** Ekranda yalnız kullanıcı adı ve sunucu parolası girilir; IP ve JDK keşif ayarı config'ten alınır, formda gösterilmez. Varsayılan `remote.jdkHome: auto` ile sunucudaki JDK'lar otomatik bulunur. Yerel toplama için Swing'den **Yerel Bilgisayar** veya CLI'den **`--local`** seçin. Uzak modda loglar/sistem ölçümleri sunucudan, ZIP çıktısı bu bilgisayardan gelir. [Uzak mod kurulum, kullanım ve test açıklaması](docs/remote-mode.md).
 
 Sunucudaki geçici çalışma alanı önce `C:/Temp/diagnostic-remote-<UUID>` olur. C: üzerinde 320 MiB'den az boş alan varsa veya çalışma paylaşımına erişilemiyorsa `D:/Temp/diagnostic-remote-<UUID>` denenir. Kontrol sunucunun disklerinde yapılır; 256 MiB rezervin yanında başlangıç için 64 MiB pay aranır. `remote.workShare: auto` C için mevcut `Temp`/`C$`, D için `Temp`/`DTemp`/`D$` paylaşımlarını dener; paylaşım seçilen Temp kökünü kapsamalıdır. İki alan da kullanılamazsa iş klasörü oluşturulmadan nedenler bildirilir. Standart kullanıcı için uygun SMB paylaşım/NTFS ve WMI/DCOM yetkileri sunucuda önceden verilmelidir. Collector paylaşım oluşturmaz ve hesapların haklarını genişletmez. [Standart hesap önkoşulları](docs/remote-mode.md#administrator-olmayan-hesap-için-sunucuda-gerekenler).
 
@@ -96,6 +100,8 @@ Gömülü `remote.ping.subnet: '15.30.9.0/24'` ayarıyla `.1–.254` arasındaki
 
 VxWorks akışında IP/MAC sorgusundan sonra, ilk `i` listesinden önce **`TatlYaz`** bir kez gönderilir. Ham yanıt `vxworks/ports/port-COM*/TatlYaz.txt` dosyasına girer; alınma durumu ve varsa hata mevcut `vxworks/SONUC.txt` ve manifestte görünür. Simge desteklenmiyorsa görev/ağ toplamaya devam edilir; istem dönmezse kısmi çıktı korunur ve o porta yeni komut gönderilmez. Komut cihazın kendi uygulama imajında bulunmalıdır; adı ve harfleri aynen korunur, farklı komut denenmez.
 
+`TatlYaz` yanıtında ilk konsol istemi döndükten sonra **3 saniye daha** seri bağlantı okunur. Geç gelen loglar aynı `TatlYaz.txt` ve ham konsola eklenir; bu bekleme tamamlanmadan `i` veya başka komut gönderilmez. Beklerken iptal ve port/çıktı sınırları kontrol edilir. Hiç istem dönmezse normal komut timeout'u geçerlidir; istem dönerse ek okuma penceresi ve en fazla 500 ms son yanıt payı uygulanır. Portun toplam süre sınırı artırılmaz.
+
 Konsol isteminden sonra ilk komut artık **`version`** olur; yanıtında VxWorks sürüm başlığı doğrulanmadan IP/TatlYaz/task komutları gönderilmez. Task anlık görüntüleri sonrasında **`time`, `moduleShow`, `checkStack 0`, `taskShow 0,2`, `devs`, `whoami`, `w`** ve ilk listede **PEND durumundaki her task için `tw 0xTASKID`** denenir. `memShow 0` mevcut ağ/bellek adımında tek kez çalışır. Ek yanıtlar portun `diagnostics/` klasöründe (`time.txt`, `moduleShow.txt` dahil), `tw` yanıtları `tasks/tw-0x*.txt` içindedir; komut bazında sonuç mevcut `vxworks/SONUC.txt` dosyasına girer. `.` bağımsız bir tanılama komutu olarak eklenmez. Desteklenmeyen komut kaydedilir; timeout'ta o porta yeni komut gönderilmez. Ek sorgular mevcut süre ve çıktı sınırlarını kullanır.
 
 **Logları Temizle** düğmesi ekrandaki işlem günlüğünü ve Java süreçleri tablosunu temizler. Kaynak log dosyalarını veya raporları silmez; devam eden toplama işlemini etkilemez.
@@ -121,7 +127,7 @@ Administrator yetkisi, başka kullanıcı/oturum/servis altındaki JVM'ye attach
 4. Her JVM için üç örnek alınır. Önce `jcmd PID Thread.print -l`, başarısızsa `jstack -l PID` denenir. Örnekler arasında önceki girişim tamamlandıktan sonra **en az 5 saniye** beklenir. Araç süreleri nedeniyle gerçek örnek aralığı uzayabilir; zamanlar manifesttedir. Sıralı toplama aşırı attach yükünü sınırlar; çok JVM varsa toplam süre uzar.
 5. GC istatistikleri `jstat -gcutil PID 1000 1` ile bir örnek alınarak best effort toplanır; bu araç GC tetiklemez. `DisableAttachMechanism` kullanılırken shared-memory jstat verileri yine erişilebilir olabilir.
 
-Araç arama sırası: YAML `jdkHomes` sırası, hedef executable yanındaki JDK, collector `java.home` (Java 8 `jre` üst klasörü dahil), `JAVA_HOME`, `PATH`. Araç başına ilk mevcut binary seçilir; uyumsuzsa hata kaydedilir, jcmd dump hatasında jstack denenir. Farklı JVM aileleri için uygun JDK'yı konfigürasyonda öne alın. Aracın bulunamaması, timeout, exit code, stderr ve raw stdout dosyaları kaydedilir. Hata nedenleri işletim sistemi/araç çıktısıdır; yetki sorunu olduğu varsayılmaz.
+Varsayılan uzak JDK ayarı `remote.jdkHome: auto` şeklindedir. Her hedefin Java/jvm.dll konumu, JAVA_HOME/JDK_HOME, `where.exe` ile PATH, 32/64 bit Java kayıt defteri ve yaygın vendor klasörlerinden adaylar bulunur. Yerelde collector Java kökü de eklenir. Aynı keşif kuralları her iki modda kullanılır; bilinen yanlış mimari/Java ailesi elenir. Hedefle aynı kurulum/sürüm/üretici/mimari öne alınır. En fazla üç uygun kökte jcmd → jstack denenir; bütün adaylar örnek başına `2 × commandTimeoutSeconds` bütçesini paylaşır. İlk geçerli dump'ta durulur ve başarılı araç kalan örneklerde tercih edilir. Toplam üç dump ve arada en az beş saniye korunur. Adaylar `debug/jdk-discovery.json`, seçilen araç `java-surecleri.txt`, denenen araçların sürüm/mimarisi ve raw hataları manifest/dump dosyalarında bulunur. Yeni JDK kurulmaz. [Keşif sınırları](docs/remote-mode.md#jdk-otomatik-keşfi-ve-pidye-göre-seçim).
 
 Hedefe `GC.run`, heap dump, zorlayıcı `jstack -F`, restart veya kill gönderilmez. Timeout'ta yalnızca ProcessBuilder'ın başlattığı tanılama yardımcı süreci kapatılır. Thread dump kısa safepoint/attach etkisi yaratabilir. ProcessBuilder argüman listeleri kullanılır; kullanıcı girdileri shell komutuna çevrilmez. PowerShell scriptleri JAR içinden alınır ve UTF-16LE `EncodedCommand` ile gönderilir.
 
@@ -129,7 +135,7 @@ Hedefe `GC.run`, heap dump, zorlayıcı `jstack -F`, restart veya kill gönderil
 
 YAML birden fazla dizin ve tek dosya kaynağını destekler. `recursive`, küçük/büyük harfe duyarsız `extensions`, `modifiedWithinHours` ve `maxFileSizeMb` uygulanır. `modifiedWithinHours: 0` zaman filtresini; `extensions: []` uzantı filtresini kaldırır. Boyut sınırını aşan dosyalar `SKIPPED_SIZE` olur; kesilerek rapora alınmaz. Bilinmeyen YAML alanları, düz metin `password`, duplicate key, özel nesne tag'leri ve alias koleksiyonlar reddedilir.
 
-Her kaynak için `base: config` (yerelde YAML klasörü, uzakta kurulum kökü), `installation` veya `application` seçilebilir. `destination` ZIP'in `logs/` bölümündeki hedef alt klasördür; verilmezse `01`, `02` gibi dizinler kullanılır. Aynı hedef dosyaya iki kaynak denk gelirse önceki kopya korunur ve `DESTINATION_COLLISION` kaydedilir. `jdkHomes` yerelde önce aranacak JDK'ları, uzakta `remote.jdkHome` sonrasındaki sunucu JDK köklerini belirtir.
+Her kaynak için `base: config` (yerelde YAML klasörü, uzakta kurulum kökü), `installation` veya `application` seçilebilir. `destination` ZIP'in `logs/` bölümündeki hedef alt klasördür; verilmezse `01`, `02` gibi dizinler kullanılır. Aynı hedef dosyaya iki kaynak denk gelirse önceki kopya korunur ve `DESTINATION_COLLISION` kaydedilir. `jdkHomes`, toplama yapılan bilgisayardaki ek JDK köklerini belirtir; uyumluluk sıralaması yine uygulanır.
 
 Fotoğraflardaki kaynakların karşılığı aşağıdadır. Kurulum kökü `C:/aselsan/ares2n`; uygulama kökü otomatik çözülür. Config/XML dosyalarında zaman filtresi yoktur. Log/kayıt/veri kaynakları için **son 48 saat**, her dosya için **100 MiB** sınırı seçildi; bunlar fotoğraftan alınan değerler değil, değiştirilebilir toplama varsayılanlarıdır. Uzantı filtresi kapalıdır; farklı log/kayıt uzantıları da kopyalanır.
 
@@ -212,6 +218,8 @@ Uzak raporda yardımcı keşif ve sunucu sorgularının ham kayıtları `debug/d
 
 Yerel/uzak toplamada JAR'ın işlem günlüğüne başlangıç ve bitiş zamanı ile toplam süre dakika ve dk/sn olarak yazılır. Bu bilgiler Swing günlüğünde ve CLI çıktısında görünür; zamanlar istemci bilgisayarın saat dilimini içerir. Süre monotonik sayaçla hesaplanır, ZIP doğrulaması ve geçici dosya temizliğini kapsar; hata/kesinti durumunda da bitiş ve geçen süre kaydedilir.
 
+Uzak toplamanın işlem günlüğü WMI ve SMB için ayrı bağlantı sonucu, geçici klasör/yetki/yardımcı hazırlığı, Java keşfi, her araç denemesi ve dump sonucu, kaynak ölçümü, ping, her COM komutu, BAT hazırlığı, her log kaynağı/dosya ve filtre nedeni, indirme/hash kontrolü, analiz, ZIP doğrulaması ve temizliği gösterir. `time` ve `moduleShow` ayrı ayrı `BASLADI`, yanıt/hata veya `CALISTIRILMADI` sonucu verir. Hızlı sunucu adımları son mesajla ezilmez; sıralı JSONL günlüklerinden okunur. Ham sunucu işlem günlükleri ZIP içindeki `debug/activity-*.jsonl` dosyalarında saklanır. Ekrandaki istemci bağlantı/ZIP/son temizlik mesajları bu sunucu günlüklerinden ayrıdır.
+
 ## Mimari
 
 | Sınıf/modül | Sorumluluk |
@@ -267,3 +275,5 @@ Bu test sahibin beklendiği gibi keşfedildiğini, jcmd'nin üç kez denendiğin
 MVP geliştirme makinesindeki gerçek sonuçlar için [Windows test kaydı](docs/windows-test-results.md) dosyasına bakın. İkinci kullanıcı/administrator sahası bu ortamda mevcut olmadığından o test koşullu olarak atlanır; sonuçlar uydurulmaz.
 
 [Review düzeltmeleri ve tek JAR paketleme](docs/review-fixes.md): `scripts/Package-Collector.ps1`, doğrulanmış derlemeden kök JAR ve yalnız JAR içeren dağıtım ZIP'i üretir.
+
+Paketlemeden önce Collector pencerelerini kapatın. Çalışan JAR'ın üzerine yazılması Java 8'de sonradan yüklenen sınıflar için `NoClassDefFoundError` oluşturabilir. Paketleme betiği ilgili JAR ile çalışan Java sürecini görürse işlemi durdurur; yeni dosyayı önce ayrı bir dosyada SHA-256 ile doğrular, sonra eski JAR'ı atomik olarak değiştirir. Kilit nedeniyle değişiklik yapılamazsa eski JAR korunur. Doğrudan Maven veya elle dosya kopyalama bu kontrolü uygulamaz; güncelleme için betiği kullanın.

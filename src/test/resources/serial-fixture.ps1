@@ -1,10 +1,15 @@
 # A fake serial adapter. Tests never open a hardware COM port.
 function New-FakeSerial {
-    $fake=[pscustomobject]@{IsOpen=$false;Handshake=0;DtrEnable=$false;RtsEnable=$false;ReadTimeout=0;WriteTimeout=0;Encoding=$null;Buffer='';PendingPage=$false;Writes=@()}
+    $fake=[pscustomobject]@{IsOpen=$false;Handshake=0;DtrEnable=$false;RtsEnable=$false;ReadTimeout=0;WriteTimeout=0;Encoding=$null;Buffer='';PendingPage=$false;Writes=@();LateWatch=$null;LateChunk=''}
     $fake|Add-Member ScriptMethod Open {$this.IsOpen=$true}
-    $fake|Add-Member ScriptMethod Close {$this.IsOpen=$false}
-    $fake|Add-Member ScriptMethod Dispose {[IO.File]::WriteAllText((Join-Path $global:fixtureRoot 'disposed.txt'),'closed')}
-    $fake|Add-Member ScriptMethod ReadExisting {$value=$this.Buffer;$this.Buffer='';return $value}
+    $fake|Add-Member ScriptMethod Close {if($global:fixtureTiMode -eq 'close-failed'){throw 'FIXTURE_SERIAL_CLOSE_FAILED'};$this.IsOpen=$false}
+    $fake|Add-Member ScriptMethod Dispose {[IO.File]::WriteAllText((Join-Path $global:fixtureRoot 'disposed.txt'),'closed');if($global:fixtureTiMode -eq 'close-failed'){throw 'FIXTURE_SERIAL_DISPOSE_FAILED'}}
+    $fake|Add-Member ScriptMethod ReadExisting {
+        $value=$this.Buffer;$this.Buffer=''
+        if($this.LateWatch -and $this.LateWatch.ElapsedMilliseconds -ge 2000 -and $this.LateChunk){$value+=$this.LateChunk;$this.LateChunk=''}
+        if($this.LateWatch -and $global:fixtureTiMode -eq 'tatl-cancel' -and $this.LateWatch.ElapsedMilliseconds -ge 500){[IO.File]::WriteAllText((Join-Path $global:fixtureRoot 'cancel.txt'),'cancel')}
+        return $value
+    }
     $fake|Add-Member ScriptMethod Write {
         param($inputText)
         $this.Writes+=,[string]$inputText
@@ -33,6 +38,8 @@ function New-FakeSerial {
         }
         if($cmd -eq 'i'){$this.PendingPage=$true;$this.Buffer="i`r`nNAME ENTRY TID PRI STATUS`r`n"+$row1+"`r`nType <CR> to continue, Q<CR> or q<CR> to stop: ";return}
         if($cmd -eq 'TatlYaz'){
+            if($global:fixtureTiMode -eq 'tatl-delayed'){$this.LateWatch=[Diagnostics.Stopwatch]::StartNew();$this.LateChunk="`r`nLATE_TATLYAZ_OUTPUT`r`n-> "}
+            if($global:fixtureTiMode -eq 'tatl-cancel'){$this.LateWatch=[Diagnostics.Stopwatch]::StartNew()}
             if($global:fixtureTiMode -eq 'tatl-oversize'){$this.Buffer="TatlYaz`r`nLARGE_BEGIN"+('x'*(1MB+1));return}
             if($global:fixtureTiMode -eq 'tatl-write-failed'){throw 'FIXTURE_TATLYAZ_WRITE_FAILED'}
             if($global:fixtureTiMode -eq 'tatl-silent'){$this.Buffer="TatlYaz`r`npartial custom output, no prompt";return}

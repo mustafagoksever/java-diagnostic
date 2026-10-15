@@ -10,9 +10,26 @@ import java.util.regex.Matcher;
 
 /** Local Windows integration tests; fake serial adapter, real loopback ICMP only. */
 public class RemoteExtrasIT {
+    @Test public void pingActivityCountsIntermittentRepliesAsRespondingAddresses() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows());Path root=Files.createTempDirectory("diagnostic-ping-activity-");
+        try{
+            Path source=Files.write(root.resolve("extras.ps1"),PowerShell.resource("remote-extras.ps1").getBytes(StandardCharsets.UTF_8));
+            String script="$ErrorActionPreference='Stop';$tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile('"+quote(source)+"',[ref]$tokens,[ref]$issues);"
+                +"$fn=$ast.Find({param($a)$a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Collect-RemoteExtraDiagnostics'},$true);. ([scriptblock]::Create($fn.Extent.Text));"
+                +"$settings=[pscustomobject]@{action='collect';ping=@{enabled=$true;addresses=@('127.0.0.1','127.0.0.2');attempts=2;parallelism=1;timeoutMillis=500;intervalMillis=0};vxworks=@{enabled=$false}};"
+                +"$result=[pscustomobject]@{};$messages=New-Object 'Collections.Generic.List[string]';function Activity($message){$messages.Add([string]$message)};"
+                +"function Invoke-ExtraHelper {return [pscustomobject]@{success=$true;results=@(@{address='127.0.0.1';status='INTERMITTENT';received=1;sent=2;averageRoundTripMillis=1},@{address='127.0.0.2';status='NO_ECHO_REPLY';received=0;sent=2;averageRoundTripMillis=$null})}};"
+                +"Collect-RemoteExtraDiagnostics;[pscustomobject]@{messages=@($messages.ToArray())}|ConvertTo-Json -Depth 4 -Compress";
+            CommandResult execution=new PowerShell(new ProcessCommandExecutor()).run(script,10000);Assert.assertTrue(execution.error(),execution.success());
+            JsonArray messages=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject().getAsJsonArray("messages");
+            boolean summary=false;for(JsonElement message:messages)if(message.getAsString().equals("[Ping] Bitti: 1 IP yanit verdi; toplam 2 sonuc."))summary=true;
+            Assert.assertTrue(messages.toString(),summary);
+        }finally{FileSupport.deleteTree(root);}
+    }
     @Test public void serialReaderUsesAll32BitTaskIdsAndCapturesSocketFallback() throws Exception {serial(false,false);}
     @Test public void serialReaderPreserves64BitTaskIdsAndNativeRestrictions() throws Exception {serial(true,false);}
     @Test public void silentPortTimesOutClosesAndNeverGetsDiagnosticCommands() throws Exception {serial(false,true);}
+    @Test public void serialCloseFailureStillDisposesAndWritesFinalResult() throws Exception {serial(false,true,false,"close-failed");}
     @Test public void missingDeviceIpDoesNotInventAnAddressOrSkipTaskTraces() throws Exception {serial(false,false,true);}
     @Test public void unsupportedTaskInfoIsRecordedWithoutSkippingTracesOrNetwork() throws Exception {serial(false,false,false,"unsupported");}
     @Test public void taskInfoForAnotherTaskIsNotReportedAsCollected() throws Exception {serial(true,false,false,"unconfirmed");}
@@ -38,7 +55,8 @@ public class RemoteExtrasIT {
     @Test public void arrowPromptWithoutVxWorksVersionNeverReceivesDiagnosticCommands() throws Exception {serial(false,false,false,"version-invalid");}
     @Test public void unknownSymbolMentioningVxWorksDoesNotPassVersionConfirmation() throws Exception {serial(false,false,false,"version-unsupported");}
     @Test public void responseLimitPreservesBoundedPartialOutputEvenWhenTheFirstReadIsOversized() throws Exception {serial(false,false,false,"tatl-oversize");}
-
+    @Test public void tatlYazCapturesLateLogsForThreeSecondsBeforeTheNextCommand() throws Exception {serial(false,false,false,"tatl-delayed");}
+    @Test public void cancellationDuringTatlYazCapturePreservesOutputAndStopsCommands() throws Exception {serial(false,false,false,"tatl-cancel");}
     @Test public void unsupportedTimeStillCollectsModulesAndNetwork() throws Exception {serial(false,false,false,"time-unsupported");}
     @Test public void timeTimeoutPreservesPartialLogAndDoesNotSendModuleShow() throws Exception {serial(false,false,false,"time-silent");}
 
@@ -52,7 +70,8 @@ public class RemoteExtrasIT {
         Assume.assumeTrue(PowerShell.isWindows());Path job=createJob();
         try{
             String port=tiMode.equals("auto-port")?"COM500":wide?"COM17":"COM7";
-            CollectorConfiguration c=new CollectorConfiguration();c.vxworks.enabled=true;c.vxworks.autoDiscoverPorts=tiMode.equals("auto-port");if(!c.vxworks.autoDiscoverPorts)c.vxworks.ports.add(port);c.vxworks.commandTimeoutSeconds=(silent||tiMode.endsWith("silent"))?1:5;c.vxworks.portTimeoutSeconds=30;
+            CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.vxworks.enabled=true;c.vxworks.autoDiscoverPorts=tiMode.equals("auto-port");if(!c.vxworks.autoDiscoverPorts)c.vxworks.ports.add(port);c.vxworks.commandTimeoutSeconds=(silent||tiMode.endsWith("silent"))?1:5;c.vxworks.portTimeoutSeconds=30;
+            if(tiMode.equals("tatl-delayed"))c.vxworks.commandTimeoutSeconds=1;
             writeSettings(job,c,"collect");
             String reader=PowerShell.resource("remote-vxworks.ps1");
             reader=reader.replaceAll("(?m)^\\$serial=New-Object IO\\.Ports\\.SerialPort.*$",Matcher.quoteReplacement("$serial=New-FakeSerial"));
@@ -63,6 +82,18 @@ public class RemoteExtrasIT {
             String launch="[Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo('tr-TR');$global:fixtureRoot='"+quote(job)+"';$global:fixtureWide="+(wide?"$true":"$false")+";$global:fixtureSilent="+(silent?"$true":"$false")+";$global:fixtureNoIdentity="+(noIdentity?"$true":"$false")+";$global:fixtureTiMode='"+tiMode+"';\r\n"+fixture+"\r\n& '"+quote(job.resolve("remote-vxworks.ps1"))+"' -PortName '"+port+"' -JobRoot '"+quote(job)+"' -RequestFile '"+quote(job.resolve("request.json"))+"'";
             script(job.resolve("launch.ps1"),launch);CommandResult execution=run(job,"launch.ps1",30000);Assert.assertTrue(execution.error(),execution.success());
             JsonObject result=JsonParser.parseString(execution.stdout.trim()).getAsJsonObject();Assert.assertTrue("Adapter disposed",Files.isRegularFile(job.resolve("disposed.txt")));
+            if(tiMode.equals("close-failed")){Assert.assertTrue(result.toString(),result.get("error").getAsString().contains("SERIAL_CLOSE_FAILED"));Assert.assertTrue(result.toString(),result.get("error").getAsString().contains("SERIAL_DISPOSE_FAILED"));}
+            StringBuilder messages=new StringBuilder();
+            for(String line:Files.readAllLines(job.resolve("activity-"+port+".jsonl"),StandardCharsets.UTF_8)){
+                if(!line.trim().isEmpty())messages.append(JsonParser.parseString(line).getAsJsonObject().get("message").getAsString()).append('\n');
+            }
+            String activity=messages.toString();
+            for(JsonElement command:result.getAsJsonArray("commands")){
+                String name=command.getAsJsonObject().get("command").getAsString();
+                Assert.assertTrue("Missing command start: "+name,activity.contains(name+" | BASLADI"));
+                Assert.assertTrue("Missing command outcome: "+name,activity.contains(name+" | YANIT ALINDI")||activity.contains(name+" | DESTEKLENMIYOR")||activity.contains(name+" | BASARISIZ")||activity.contains(name+" | YANIT TAMAMLANMADI"));
+            }
+            Assert.assertTrue(activity,activity.contains("PORT TAMAMLANDI"));
             Assert.assertTrue(Files.isDirectory(job.resolve("data/vxworks/ports/port-"+port)));
             if(silent){Assert.assertFalse(result.toString(),result.get("vxworksPrompt").getAsBoolean());Assert.assertEquals(0,result.getAsJsonArray("commands").size());return;}
             if(tiMode.startsWith("version-")){
@@ -74,6 +105,10 @@ public class RemoteExtrasIT {
             Path tatlFile=job.resolve("data").resolve(tatl.get("artifact").getAsString());
             int tatlCommands=0;for(JsonElement item:result.getAsJsonArray("commands"))if(item.getAsJsonObject().get("command").getAsString().equals("TatlYaz"))tatlCommands++;
             Assert.assertEquals(1,tatlCommands);
+            if(tiMode.equals("tatl-cancel")){
+                Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertTrue(tatl.get("error").getAsString().contains("REMOTE_CANCELLED"));
+                Assert.assertEquals(4,result.getAsJsonArray("commands").size());Assert.assertTrue(Files.isRegularFile(tatlFile));return;
+            }
             if(tiMode.equals("tatl-oversize")){
                 Assert.assertFalse(result.get("completed").getAsBoolean());Assert.assertEquals("FAILED",result.get("status").getAsString());
                 Assert.assertTrue(tatl.get("error").getAsString().contains("SERIAL_RESPONSE_LIMIT"));
@@ -95,6 +130,12 @@ public class RemoteExtrasIT {
             String tatlText=new String(Files.readAllBytes(tatlFile),StandardCharsets.UTF_8);
             if(tiMode.equals("tatl-unsupported")){Assert.assertTrue(tatl.get("error").getAsString().contains("TATLYAZ_UNSUPPORTED"));Assert.assertTrue(tatlText.contains("unknown symbol"));}
             else Assert.assertTrue(tatlText.contains("FIXTURE_CUSTOM_OUTPUT"));
+            JsonObject tatlOp=null;for(JsonElement item:result.getAsJsonArray("commands"))if(item.getAsJsonObject().get("command").getAsString().equals("TatlYaz"))tatlOp=item.getAsJsonObject();
+            Assert.assertNotNull(tatlOp);Assert.assertEquals(3000,tatlOp.get("postPromptCaptureMillis").getAsInt());Assert.assertTrue(tatlOp.toString(),tatlOp.get("durationMillis").getAsLong()>=3000);
+            if(tiMode.equals("tatl-delayed")){
+                Assert.assertTrue(tatlText.contains("LATE_TATLYAZ_OUTPUT"));
+                Assert.assertFalse(new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-COM7/i-before.txt")),StandardCharsets.UTF_8).contains("LATE_TATLYAZ_OUTPUT"));
+            }
             if(tiMode.equals("write-failed")){
                 JsonObject task=result.getAsJsonArray("tasks").get(0).getAsJsonObject();Assert.assertFalse(result.get("completed").getAsBoolean());
                 Assert.assertEquals("FAILED",result.get("status").getAsString());Assert.assertTrue(task.get("error").isJsonNull());
@@ -133,11 +174,12 @@ public class RemoteExtrasIT {
                 JsonArray ops=result.getAsJsonArray("commands");Assert.assertEquals("time",ops.get(ops.size()-1).getAsJsonObject().get("command").getAsString());
                 Assert.assertTrue(new String(Files.readAllBytes(job.resolve("data/vxworks/ports/port-COM7/diagnostics/time.txt")),StandardCharsets.UTF_8).contains("partial time output"));
                 Assert.assertFalse(Files.exists(job.resolve("data/vxworks/ports/port-COM7/diagnostics/moduleShow.txt")));
+                Assert.assertTrue(activity,activity.contains("moduleShow | CALISTIRILMADI"));
                 return;
             }
             Assert.assertTrue(result.toString(),result.get("completed").getAsBoolean());Assert.assertFalse(result.get("success").getAsBoolean());
             Assert.assertEquals(3,result.get("initialTaskCount").getAsInt());Assert.assertEquals(3,result.get("attemptedTaskCount").getAsInt());Assert.assertEquals(1,result.get("tracesWithFrames").getAsInt());
-            boolean validInfo=Arrays.asList("normal","minus-one","unsigned-ones","auto-port","tatl-unsupported","diagnostic-unsupported","time-unsupported").contains(tiMode);
+            boolean validInfo=Arrays.asList("normal","minus-one","unsigned-ones","auto-port","tatl-unsupported","diagnostic-unsupported","tatl-delayed","time-unsupported").contains(tiMode);
             Assert.assertEquals(3,result.get("attemptedTaskInfoCount").getAsInt());Assert.assertEquals(validInfo?2:0,result.get("taskInfosCollected").getAsInt());
             String prefix=wide?"0xffff8000000000":"0x";
             Assert.assertEquals(prefix+"42",result.getAsJsonArray("tasks").get(0).getAsJsonObject().get("taskId").getAsString());
@@ -209,6 +251,7 @@ public class RemoteExtrasIT {
         Assume.assumeTrue(PowerShell.isWindows());Path job=createJob();
         try{
             for(String resource:RemotePowerShellTransport.HELPER_RESOURCES)script(job.resolve(resource),PowerShell.resource(resource));
+            script(job.resolve("jdk-discovery.ps1"),PowerShell.resource("jdk-discovery.ps1")+"\nfunction Get-JdkInventory {param($roots,$targets)[pscustomobject]@{candidates=@();plans=@();notes=@()}}\n");
             boolean automatic=!discoveryMode.equals("manual");
             if(automatic){
                 String extras=PowerShell.resource("remote-extras.ps1");Assert.assertTrue(extras.contains("[IO.Ports.SerialPort]::GetPortNames()"));
@@ -220,7 +263,7 @@ public class RemoteExtrasIT {
             String vx="param($JobRoot,$RequestFile,$PortName)\nif($PortName -eq 'COM7'){throw 'FIXTURE_PORT_BUSY'};$folder=Join-Path $JobRoot ('data/vxworks/ports/port-'+$PortName);[void][IO.Directory]::CreateDirectory($folder);$value=[pscustomobject]@{port=$PortName;identity=@{addresses=@('15.30.9.195');macAddresses=@('00:03:73:77:95:02');collected=$true};success=$true;completed=$true;status='COLLECTED';initialTaskCount=0;attemptedTaskCount=0;tracesWithFrames=0;networkAvailable=$true;tasks=@();commands=@();socketRows=@()};$json=$value|ConvertTo-Json -Depth 5;[IO.File]::WriteAllText((Join-Path $folder 'port-result.json'),$json);$json";
             vx=vx.replace("$value=[pscustomobject]@{port=$PortName;","[IO.File]::WriteAllText((Join-Path $folder 'TatlYaz.txt'),'FIXTURE_CUSTOM_OUTPUT');$value=[pscustomobject]@{port=$PortName;tatlYaz=@{attempted=$true;collected=$true;artifact=('vxworks/ports/port-'+$PortName+'/TatlYaz.txt');error=$null};");
             script(job.resolve("remote-vxworks.ps1"),vx);
-            CollectorConfiguration c=new CollectorConfiguration();c.installationPath=job.toString();c.applicationPath=".";c.resourceMonitoringSeconds=0;c.collectGcStats=false;c.remoteTimeoutSeconds=60;
+            CollectorConfiguration c=new CollectorConfiguration();c.remoteWindowsDiagnostics=false;c.installationPath=job.toString();c.applicationPath=".";c.resourceMonitoringSeconds=0;c.collectGcStats=false;c.remoteTimeoutSeconds=60;
             c.ping.enabled=true;c.ping.addresses.add("127.0.0.1");c.ping.attempts=2;c.ping.intervalMillis=0;c.vxworks.enabled=true;
             if(automatic){
                 c.vxworks.autoDiscoverPorts=true;c.vxworks.ports.add("COM99");

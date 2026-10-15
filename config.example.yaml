@@ -4,8 +4,11 @@
 
 mode: remote                  # local seçerseniz bu bilgisayarda toplar.
 remote:
+  # Sunucuda salt okunur ağ/süreç/servis/sürücü/oturum/saat ve olay sorguları.
+  # ZIP içinde server/SONUC.txt sonuçları gösterir. Listeleme bunları çalıştırmaz.
+  windowsDiagnostics: true
   host: '15.30.9.176'
-  jdkHome: 'C:/Program Files/Java/jdk1.8.0_281'
+  jdkHome: auto                # Sunucudaki uygun JDK'yı otomatik seçer; sabit yol da aday olarak verilebilir.
   timeoutSeconds: 1800
   workShare: auto              # C:/Temp; kullanılamazsa D:/Temp (en az 320 MiB).
   beforeLogCopyBatch: 'Log/kaydal.bat' # Sunucuda, uygulama köküne göre; '' kapatır.

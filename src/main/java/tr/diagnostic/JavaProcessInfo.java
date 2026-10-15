@@ -12,6 +12,8 @@ public final class JavaProcessInfo {
     public String startTime;
     public String startTicks;
     public String executablePath;
+    public String jvmLibraryPath;
+    public String architecture;
     public String javaVersion;
     public String versionSource;
     public String discoverySource;

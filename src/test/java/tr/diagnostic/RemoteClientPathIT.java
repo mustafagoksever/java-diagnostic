@@ -82,15 +82,18 @@ public class RemoteClientPathIT {
     @Test public void failedDownloadVerificationRemovesTheCompletedJobFolder() throws Exception {
         runClientFixture("hash");
     }
+    @Test public void failedWmiConnectionIsExplicitInTheActivityLog() throws Exception {
+        runClientFixture("wmi");
+    }
     private void runClientFixture(String failure) throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());
         Path local=Files.createTempDirectory("diagnostic-client-path-");
-        String setup = "$fixtureFailStart="+("start".equals(failure)?"$true":"$false")+";$fixtureBadHash="+("hash".equals(failure)?"$true":"$false")+";"+
+        String setup = "$fixtureFailConnection="+("wmi".equals(failure)?"$true":"$false")+";$fixtureFailStart="+("start".equals(failure)?"$true":"$false")+";$fixtureBadHash="+("hash".equals(failure)?"$true":"$false")+";"+
             "$fixtureIdentity=[Security.Principal.WindowsIdentity]::GetCurrent();"+
             "$fixtureParts=$fixtureIdentity.Name.Split('\\');"+
             "function New-PSDrive { param($Name,$PSProvider,$Root,$Credential) Microsoft.PowerShell.Management\\New-PSDrive -Name $Name -PSProvider $PSProvider -Root $Root };"+
             "function Get-WmiObject { param($Class,$Filter,[switch]$List,$ComputerName,$Credential,$Authentication,$Impersonation) " +
-            "if($Class -eq 'Win32_ComputerSystem'){return [pscustomobject]@{Name=$env:COMPUTERNAME}};"+
+            "if($Class -eq 'Win32_ComputerSystem'){if($fixtureFailConnection){throw 'FIXTURE_WMI_CONNECTION_FAILED'};return [pscustomobject]@{Name=$env:COMPUTERNAME}};"+
             "if($Class -eq 'Win32_LogicalDisk'){return [pscustomobject]@{FreeSpace=1GB}};"+
             "if($Class -eq 'Win32_UserAccount'){return [pscustomobject]@{Name=$fixtureParts[-1];Domain=$fixtureParts[0];SID=$fixtureIdentity.User.Value}};"+
             "if($Class -eq 'Win32_Share'){if($Filter -eq \"Name='C$'\"){return [pscustomobject]@{Name='C$';Path='C:\\'}};return $null};"+
@@ -101,12 +104,13 @@ public class RemoteClientPathIT {
             "if(!$fixtureRoot){throw 'Missing isolated fixture root'};"+
             "$fixtureRequest=Get-Content -LiteralPath ([IO.Path]::Combine($fixtureRoot,'request.json')) -Raw|ConvertFrom-Json;"+
             "if(!$fixtureRequest.nonInteractiveTransport -or !$fixtureRequest.interactiveUserSid -or !$fixtureRequest.interactiveUserName){throw 'Missing session identity'};"+
-            "foreach($fixtureResource in @('remote-worker.ps1','remote-batch.ps1','process-scan.ps1','system-info.ps1','resource-monitor.ps1','remote-extras.ps1','remote-ping.ps1','remote-vxworks.ps1')){"+
+            "foreach($fixtureResource in @('remote-worker.ps1','remote-batch.ps1','process-scan.ps1','system-info.ps1','resource-monitor.ps1','remote-extras.ps1','remote-ping.ps1','remote-vxworks.ps1','jdk-discovery.ps1')){"+
             "if(![IO.File]::Exists([IO.Path]::Combine($fixtureRoot,$fixtureResource))){throw 'Helper not copied'}};"+
             "$fixtureData=[IO.Path]::Combine($fixtureRoot,'data');[void][IO.Directory]::CreateDirectory($fixtureData);"+
             "$fixtureFile=[IO.Path]::Combine($fixtureData,'sample.txt');[IO.File]::WriteAllText($fixtureFile,'UNC fixture payload');"+
             "$fixtureManifest=@{jobId=$fixtureRequest.jobId;files=@(@{path='sample.txt';size=(Get-Item -LiteralPath $fixtureFile).Length;sha256=(Sha256 $fixtureFile)})};"+
             "if($fixtureBadHash){$fixtureManifest.files[0].sha256='WRONG'};"+
+            "$fixtureActivity=[IO.Path]::Combine($fixtureRoot,'activity-worker.jsonl');$fixtureUtf8=New-Object Text.UTF8Encoding($false);for($step=0;$step -lt 80;$step++){[IO.File]::AppendAllText($fixtureActivity,((@{timestampUtc='2026-10-14T00:00:00Z';message=('fixture-fast-step-'+$step)}|ConvertTo-Json -Compress)+\"`n\"),$fixtureUtf8)};"+
             "[IO.File]::WriteAllText([IO.Path]::Combine($fixtureRoot,'complete.json'),($fixtureManifest|ConvertTo-Json -Depth 8));"+
             "return [pscustomobject]@{ReturnValue=0;ProcessId=2147483646}};return $fixtureClass};return $null };";
         String script=setup+PowerShell.resource("remote-client.ps1");
@@ -131,12 +135,24 @@ public class RemoteClientPathIT {
             JsonObject result=null;
             for(String line:output.split("\\r?\\n")){JsonObject event=JsonParser.parseString(line).getAsJsonObject();if("result".equals(ResourceMonitor.text(event,"event")))result=event;}
             Assert.assertNotNull(output,result);
+            if("wmi".equals(failure)){
+                Assert.assertFalse(result.get("success").getAsBoolean());
+                Assert.assertTrue(output,output.contains("[WMI] BAGLANILAMADI"));
+                Assert.assertFalse(output,output.contains("[WMI] BAGLANDI"));
+                Assert.assertFalse(output,output.contains("unused-fixture-secret"));return;
+            }
+            Assert.assertTrue(output,output.contains("[WMI] BAGLANDI"));
+            Assert.assertTrue(output,output.contains("[SMB] BAGLANDI"));
+            Assert.assertTrue(output,output.contains("[SMB] YAZMA DOGRULANDI"));
+            Assert.assertTrue("Write confirmation must follow share connection",output.indexOf("[SMB] BAGLANDI") < output.indexOf("[SMB] YAZMA DOGRULANDI"));
+            Assert.assertFalse("Share connection alone must not claim verified writes",output.contains("gecici dizine yazma dogrulandi"));
             if(failure!=null){
                 Assert.assertFalse(result.toString(),result.get("success").getAsBoolean());
                 Assert.assertTrue(result.toString(),result.get("error").getAsString().contains("start".equals(failure)?"WMI Create failed":"Download verification failed"));
                 Path remoteRoot=Paths.get(result.get("remoteDirectory").getAsString());
                 Assert.assertTrue(remoteRoot.toString().startsWith("C:\\Temp\\diagnostic-remote-"));
                 Assert.assertFalse("Failed job was cleaned",Files.exists(remoteRoot));
+                Assert.assertTrue("Failed job cleanup is logged: "+output,output.contains("[Temizlik] Basarisiz is") && output.contains("gecici") && output.contains("temizlendi"));
                 Assert.assertTrue("Base Temp remains",Files.isDirectory(Paths.get("C:/Temp")));
                 return;
             }
@@ -145,6 +161,10 @@ public class RemoteClientPathIT {
             Assert.assertTrue(result.toString(),result.get("remoteDirectory").getAsString().startsWith("C:\\Temp\\diagnostic-remote-"));
             Assert.assertEquals("UNC fixture payload",new String(Files.readAllBytes(local.resolve("download/sample.txt")),StandardCharsets.UTF_8));
             Assert.assertFalse("Credentials never go to output",output.contains("unused-fixture-secret"));
+            Assert.assertTrue(output,output.contains("[Aktarim] TAMAMLANDI"));
+            Assert.assertTrue(output,output.contains("[Temizlik] Sunucudaki gecici is klasoru temizlendi"));
+            int forwarded=0;for(String line:output.split("\\r?\\n")){JsonObject event=JsonParser.parseString(line).getAsJsonObject();if(ResourceMonitor.text(event,"message").startsWith("fixture-fast-step-"))forwarded++;}
+            Assert.assertEquals("Fast steps must reach the client exactly once",80,forwarded);
         } finally {
             if(helper!=null&&helper.isAlive()){helper.destroyForcibly();helper.waitFor(5,TimeUnit.SECONDS);}
             FileSupport.deleteTree(local);
