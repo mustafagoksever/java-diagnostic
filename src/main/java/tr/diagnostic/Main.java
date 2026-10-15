@@ -26,8 +26,8 @@ public final class Main {
         try {
             Arguments options = Arguments.parse(args);
             if (options.help) { printUsage(); return 0; }
-            ConfigurationManager manager = new ConfigurationManager();
-            CollectorConfiguration config = options.config == null ? manager.loadEmbedded() : manager.load(options.config);
+            ConfigurationFile configurationFile = options.config == null ? new ConfigurationFile() : new ConfigurationFile(options.config);
+            CollectorConfiguration config = configurationFile.load();
             if (options.mode != null) config.mode = options.mode;
             if (options.host != null) config.remoteHost = options.host;
             if (options.username != null) config.remoteUsername = options.username;
@@ -43,9 +43,8 @@ public final class Main {
             if (options.command.equals("gui")) {
                 if (GraphicsEnvironment.isHeadless()) throw new IllegalArgumentException("Swing için grafik oturumu gerekli; CLI kullanın.");
                 ServerEndpointSettings endpointSettings=new ServerEndpointSettings();
-                if(options.host==null && options.config==null)config.remoteHost=endpointSettings.hostOrDefault(config.remoteHost);
-                if(!options.admin)config.mode="remote";
-                SwingUtilities.invokeLater(() -> new CollectorFrame(config,options.admin,endpointSettings).setVisible(true)); return -1;
+                if(options.host==null && options.config==null && !configurationFile.exists())config.remoteHost=endpointSettings.hostOrDefault(config.remoteHost);
+                SwingUtilities.invokeLater(() -> new CollectorFrame(config,options.admin,configurationFile).setVisible(true)); return -1;
             }
             if (options.command.equals("collect") && "remote".equals(config.mode)) ConfigurationManager.validateRemoteSources(config);
             CollectionOrchestrator orchestrator = new CollectionOrchestrator(config);
@@ -110,7 +109,7 @@ public final class Main {
     private static String display(String value) { return value == null ? "bilinmiyor" : value.replace('\n', ' ').replace('\r', ' ').replace('\t', ' '); }
     private static void printUsage() {
         System.out.println("java -jar java-diagnostic-collector.jar [gui] [--admin] [--config config.yaml]\n"
-            + "  Varsayılan: sade kullanıcı ekranı. --admin: sunucu IP ayarı, günlükler ve süreç listesi.\n"
+            + "  Varsayılan: sade kullanıcı ekranı. Ayarlar menüsü: IP ve dizinler. --admin: günlükler ve süreç listesi.\n"
             + "  list-java [--config config.yaml]\n  validate-config [--config config.yaml]\n"
             + "  collect (--all | --pid 123[,456]) [--config config.yaml]\n"
             + "          [--generate-password | --password-env NAME]\n"
@@ -120,7 +119,7 @@ public final class Main {
     }
     static final class Arguments {
         String command = "gui";
-        Path config; // Only an explicit developer/operator override; never search beside the JAR.
+        Path config; // Explicit override takes precedence over config.yaml beside the JAR.
         boolean help, all, generatePassword, admin;
         String passwordEnv;
         String mode, host, username, remoteJdk, remotePasswordEnv;
@@ -154,7 +153,6 @@ public final class Main {
             }
             if (o.help) return o;
             if(o.admin && !o.command.equals("gui"))throw new IllegalArgumentException("--admin yalnızca GUI ekranında kullanılabilir.");
-            if(o.command.equals("gui") && "local".equals(o.mode) && !o.admin)throw new IllegalArgumentException("Yerel GUI için --admin --local kullanın.");
             if ("local".equals(o.mode) && (o.host != null || o.username != null || o.remoteJdk != null || o.remotePasswordEnv != null)) throw new IllegalArgumentException("Sunucu seçenekleri --local ile kullanılamaz.");
             if (o.command.equals("collect")) {
                 if (o.all == !o.pids.isEmpty()) throw new IllegalArgumentException("collect için yalnızca --all veya --pid belirtin.");

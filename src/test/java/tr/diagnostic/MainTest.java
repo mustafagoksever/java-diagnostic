@@ -19,7 +19,8 @@ public class MainTest {
         Main.Arguments admin=Main.Arguments.parse(new String[]{"--admin"});
         Assert.assertTrue(admin.admin);Assert.assertEquals("gui",admin.command);
         Assert.assertTrue(Main.Arguments.parse(new String[]{"gui","--admin","--local"}).admin);
-        for(String[] args:new String[][]{{"collect","--all","--admin"},{"list-java","--admin"},{"validate-config","--admin"},{"gui","--local"}}){
+        Assert.assertEquals("local",Main.Arguments.parse(new String[]{"gui","--local"}).mode);
+        for(String[] args:new String[][]{{"collect","--all","--admin"},{"list-java","--admin"},{"validate-config","--admin"}}){
             try{Main.Arguments.parse(args);Assert.fail(Arrays.toString(args));}catch(IllegalArgumentException expected){}
         }
     }

@@ -88,8 +88,8 @@ function Collect-WindowsDiagnostics {
     # a later failure/deadline. Per-channel operations retain errors separately.
     Write-WindowsRecords 'server/diagnostics/events.json' $eventRecords
     $summary=New-Object 'Collections.Generic.List[string]'
-    $summary.Add('SUNUCUDA WINDOWS TANILAMASI')
-    $summary.Add('Bu komutlar baglanilan Windows sunucusunda calistirildi. Ham yerel komut ciktilari Windows OEM kodlamasindadir; JSON UTF-8 kullanir.')
+    $summary.Add($(if($settings.mode -eq 'local'){'YEREL WINDOWS TANILAMASI'}else{'SUNUCUDA WINDOWS TANILAMASI'}))
+    $summary.Add('Bu komutlar raporun hedefi olan Windows bilgisayarinda calistirildi. Ham komut ciktilari Windows OEM kodlamasindadir; JSON UTF-8 kullanir.')
     $summary.Add('CPU/RAM: ../sunucu-kaynak-kullanimi.txt ve ../kaynak-izleme-ozeti.txt; disk: ../disk-bilgileri.txt')
     $summary.Add('Olaylar: diagnostics/events.json (alinabilen kayitlar); kanal bazinda events-system.json ve events-application.json. Bos liste hata olmadiginda [] olarak yazilir; erisim hatalari asagida ve manifestte bulunur.')
     $summary.Add('VxWorks tt/ti/checkStack ve uygulamaya ozel komutlarin Windows icin birebir karsiligi yoktur. Java thread dump dosyalari ../jvms altindadir.')

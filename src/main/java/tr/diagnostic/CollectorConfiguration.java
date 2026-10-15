@@ -41,6 +41,7 @@ public final class CollectorConfiguration {
     char[] zipPasswordCopy() { return zipPassword.clone(); }
 
     public static final class PingSettings {
+        public transient List<String> configuredAddresses;
         public boolean enabled;
         public String subnet = "";
         public List<String> addresses = new ArrayList<>();

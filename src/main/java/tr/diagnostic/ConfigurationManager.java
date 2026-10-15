@@ -20,10 +20,13 @@ public final class ConfigurationManager {
         try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) { return load(reader, base); }
     }
     public CollectorConfiguration loadEmbedded() throws IOException {
+        return loadEmbedded(Paths.get(".").toAbsolutePath().normalize());
+    }
+    CollectorConfiguration loadEmbedded(Path base) throws IOException {
         InputStream resource = ConfigurationManager.class.getResourceAsStream("/internal/config.yaml");
         if (resource == null) throw new IOException("Gömülü konfigürasyon bulunamadı; JAR paketini yeniden derleyin.");
         try (Reader reader = new InputStreamReader(resource, StandardCharsets.UTF_8)) {
-            return load(reader, Paths.get(".").toAbsolutePath().normalize());
+            return load(reader, base);
         }
     }
     private CollectorConfiguration load(Reader reader, Path base) throws IOException {
@@ -75,9 +78,10 @@ public final class ConfigurationManager {
         try { RemoteConnection.validate(c.remoteHost.isEmpty() ? "configuration-endpoint" : c.remoteHost, "configuration-endpoint", c.remoteJdkHome); }
         catch (IllegalArgumentException e) { throw new IOException(e.getMessage()); }
         c.installationPath = string(root, "installationDirectory", "");
-        c.applicationPath = string(root, "applicationDirectory", "auto");
+        // Keep the editable value equivalent to the path used below, including an omitted root.
+        c.applicationPath = string(root, "applicationDirectory", root.containsKey("installationDirectory") ? "auto" : ".");
         c.installationDirectory = root.containsKey("installationDirectory") ? resolve(base, string(root, "installationDirectory", null)) : base;
-        String app = string(root, "applicationDirectory", root.containsKey("installationDirectory") ? "auto" : ".");
+        String app = c.applicationPath;
         if (app.equals("auto")) {
             Path sub = c.installationDirectory.resolve("uygulama");
             c.applicationDirectory = Files.isDirectory(sub) ? sub :
@@ -165,6 +169,7 @@ public final class ConfigurationManager {
             ipv4Number(address);
             if (!p.addresses.contains(address)) p.addresses.add(address);
         }
+        p.configuredAddresses = new ArrayList<>(p.addresses);
         if (m.containsKey("subnet")) {
             p.subnet = text(m.get("subnet"), "remote.ping.subnet");
             String[] parts = p.subnet.split("/", -1);

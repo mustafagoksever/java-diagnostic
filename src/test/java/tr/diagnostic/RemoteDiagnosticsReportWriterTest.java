@@ -36,7 +36,7 @@ public class RemoteDiagnosticsReportWriterTest {
         new RemoteDiagnosticsReportWriter().write(m,temp.getRoot().toPath());Assert.assertEquals(1,m.errors.size());
     }
     @Test public void automaticDiscoveryAndNoPortReasonAreVisibleInTheExistingSummary() throws Exception {
-        DiagnosticReportGenerator.Manifest m=new DiagnosticReportGenerator.Manifest();
+        DiagnosticReportGenerator.Manifest m=new DiagnosticReportGenerator.Manifest();m.mode="remote";
         m.vxworks=JsonParser.parseString("{discoveryMode:'auto',detectedPorts:[],ports:[],success:false,errors:['Sunucuda kayitli COM portu bulunamadi.']}").getAsJsonObject();
         new RemoteDiagnosticsReportWriter().write(m,temp.getRoot().toPath());
         String text=read(temp.getRoot().toPath(),"vxworks/SONUC.txt");

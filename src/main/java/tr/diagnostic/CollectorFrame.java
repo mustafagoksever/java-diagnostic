@@ -11,7 +11,8 @@ import java.util.concurrent.ExecutionException;
 public final class CollectorFrame extends JFrame {
     private final CollectorConfiguration config;
     private final boolean admin;
-    private final ServerEndpointSettings endpointSettings;
+    private final ConfigurationFile configurationFile;
+    private final JMenu settingsMenu = new JMenu("Ayarlar");
     private final FailureReportWriter failureReports;
     private final JButton collect = new JButton("Hata Raporu Oluştur");
     private final JButton open = new JButton("Çıktı Klasörünü Aç");
@@ -20,8 +21,6 @@ public final class CollectorFrame extends JFrame {
     private final JComboBox<String> mode = new JComboBox<>(new String[]{"Uzak Sunucu", "Yerel Bilgisayar"});
     private final JTextField username = new JTextField(20);
     private final JPasswordField serverPassword = new JPasswordField(16);
-    private final JTextField serverHost = new JTextField(20);
-    private final JButton saveHost = new JButton("Sunucu IP'sini Kaydet");
     private final JPanel remoteFields = new JPanel(new GridBagLayout());
     private final JTextArea activity = new JTextArea(9, 90);
     private final JLabel status = new JLabel("Hazır. Collector süreçleri listelenir; rapora hedef olarak alınmaz.");
@@ -34,18 +33,26 @@ public final class CollectorFrame extends JFrame {
         this(config,false);
     }
     public CollectorFrame(CollectorConfiguration config, boolean admin) {
-        this(config,admin,new ServerEndpointSettings());
+        this(config,admin,new ConfigurationFile());
     }
-    CollectorFrame(CollectorConfiguration config, boolean admin, ServerEndpointSettings endpointSettings) {
-        this(config, admin, endpointSettings, new FailureReportWriter());
+    CollectorFrame(CollectorConfiguration config, boolean admin, ConfigurationFile configurationFile) {
+        this(config, admin, configurationFile, new FailureReportWriter());
     }
-    CollectorFrame(CollectorConfiguration config, boolean admin, ServerEndpointSettings endpointSettings, FailureReportWriter failureReports) {
+    CollectorFrame(CollectorConfiguration config, boolean admin, ConfigurationFile configurationFile, FailureReportWriter failureReports) {
         super(config.applicationTitle + (admin ? " — Admin" : "")); this.config = config;
-        this.admin=admin;this.endpointSettings=endpointSettings;
+        this.admin=admin;this.configurationFile=configurationFile;
         this.failureReports=failureReports;
+        JMenuBar menuBar=new JMenuBar();JMenuItem editSettings=new JMenuItem("Sunucu ve Dizin Ayarları...");
+        settingsMenu.add(editSettings);menuBar.add(settingsMenu);setJMenuBar(menuBar);
+        editSettings.addActionListener(event->new SettingsDialog(this,config,configurationFile,mode.getSelectedIndex()==1,saved->{
+            DirectorySettings.apply(config,saved);serverPassword.setText("");rows.setRowCount(0);
+            setTitle(config.applicationTitle+(admin?" — Admin":""));mode.setSelectedIndex("local".equals(config.mode)?1:0);
+            append("Ayarlar kaydedildi. Sonraki raporda kullanılacak.");
+        }).setVisible(true));
+        progress.setForeground(new Color(0x2E7D32));
         progress.setStringPainted(true); progress.setString("Hazır");
         progress.setToolTipText("Tamamlanan işlem aşamalarına göre ilerleme; kalan süre tahmini değildir.");
-        status.setText(admin?"Hazır. Collector süreçleri listelenir; rapora hedef olarak alınmaz.":"Hazır.");
+        status.setText(admin?"Hazır. Collector süreçleri listelenir; rapora hedef olarak alınmaz.":"local".equals(config.mode)?"Hazır. Bu bilgisayarda rapor oluşturulacak.":"Hazır.");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override public void windowClosing(java.awt.event.WindowEvent e) {
@@ -58,14 +65,11 @@ public final class CollectorFrame extends JFrame {
         clearLog.setToolTipText("Ekrandaki işlem günlüğünü ve Java süreçleri listesini temizler.");
         clearLog.addActionListener(e -> { activity.setText(""); activity.setCaretPosition(0); rows.setRowCount(0); if (collect.isEnabled()) status.setText("İşlem günlüğü ve Java süreçleri listesi temizlendi."); });
         username.setText(config.remoteUsername);
-        username.setName("username");serverPassword.setName("serverPassword");serverHost.setName("serverHost");
-        serverHost.setText(config.remoteHost);
-        mode.setSelectedIndex(admin && "local".equals(config.mode) ? 1 : 0);
+        username.setName("username");serverPassword.setName("serverPassword");
+        mode.setSelectedIndex("local".equals(config.mode) ? 1 : 0);
         JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT)); modeRow.add(new JLabel("Çalışma modu:")); modeRow.add(mode);
         addRemoteField(0, "Windows kullanıcı adı:", username);
         addRemoteField(1, "Sunucu parolası:", serverPassword);
-        if(admin){addRemoteField(2,"Sunucu IP/adresi:",serverHost);addRemoteField(3,"",saveHost);}
-        saveHost.addActionListener(e -> saveServerHost());
         JPanel connection = new JPanel(new BorderLayout()); if(admin)connection.add(modeRow, BorderLayout.NORTH); connection.add(remoteFields, BorderLayout.CENTER);
         remoteFields.setVisible(mode.getSelectedIndex() == 0);
         mode.addActionListener(e -> { remoteFields.setVisible(mode.getSelectedIndex() == 0); rows.setRowCount(0); serverPassword.setText(""); append("Mod: " + mode.getSelectedItem() + ". Rapor çıktısı bu bilgisayara kaydedilir."); revalidate(); });
@@ -92,27 +96,13 @@ public final class CollectorFrame extends JFrame {
         if (mode.getSelectedIndex() == 1) return null;
         char[] password = serverPassword.getPassword();
         try {
-            RemoteConnection remote=new RemoteConnection(admin?serverHost.getText().trim():config.remoteHost,username.getText().trim(),config.remoteJdkHome,password);
-            if(admin)config.remoteHost=remote.host;
+            RemoteConnection remote=new RemoteConnection(config.remoteHost,username.getText().trim(),config.remoteJdkHome,password);
             return remote;
         }
         finally { Arrays.fill(password, '\0'); }
     }
-    private void saveServerHost() {
-        final String host=serverHost.getText().trim();
-        try{ServerEndpointSettings.validate(host);}catch(Exception e){failure(e,"Sunucu adresini kaydetme");return;}
-        busy(true);append("Sunucu adresi kaydediliyor...");
-        new SwingWorker<Void,Void>(){
-            @Override protected Void doInBackground() throws Exception{endpointSettings.saveHost(host);return null;}
-            @Override protected void done(){
-                busy(false);
-                try{get();config.remoteHost=host;rows.setRowCount(0);append("Sunucu adresi kaydedildi: "+host+". Sonraki normal açılışlarda bu adres kullanılacak.");}
-                catch(Exception e){failure(e,"Sunucu adresini kaydetme");}
-            }
-        }.execute();
-    }
     private void busy(boolean value) {
-        collect.setEnabled(!value); list.setEnabled(!value); open.setEnabled(!value); mode.setEnabled(!value); username.setEnabled(!value); serverPassword.setEnabled(!value); serverHost.setEnabled(!value);saveHost.setEnabled(!value);
+        collect.setEnabled(!value); list.setEnabled(!value); open.setEnabled(!value); mode.setEnabled(!value); username.setEnabled(!value); serverPassword.setEnabled(!value);settingsMenu.setEnabled(!value);
         progress.setIndeterminate(value && !collectionProgressActive);
         if (!collectionProgressActive) {
             if (value) { progress.setValue(0); progress.setString("İşlem sürüyor..."); }

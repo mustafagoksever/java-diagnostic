@@ -10,20 +10,20 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 public class CliIT {
-    @Test public void distributedJarUsesEmbeddedSettingsFromAnyWorkingDirectory() throws Exception {
+    @Test public void distributedJarLoadsSavedConfigurationBesideJarFromAnyWorkingDirectory() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());
         Path root=Files.createTempDirectory("diagnostic standalone jar ");
         try {
             Path jar=Files.copy(Paths.get("target/java-diagnostic-collector.jar"),root.resolve("java-diagnostic-collector.jar"));
             Path java=Paths.get(System.getProperty("java.home"),"bin","java.exe");
             for(int pass=0;pass<2;pass++) {
-                if(pass==1)Files.write(root.resolve("config.yaml"),"invalid: [yaml\n".getBytes(StandardCharsets.UTF_8));
+                if(pass==1)Files.write(root.resolve("config.yaml"),"mode: local\noutputDirectory: saved-output\nlogs: []\n".getBytes(StandardCharsets.UTF_8));
                 Path output=root.resolve("validate-"+pass+".out"),error=root.resolve("validate-"+pass+".err");
-                Process cli=new ProcessBuilder(java.toString(),"-jar",jar.toString(),"validate-config").directory(root.toFile()).redirectOutput(output.toFile()).redirectError(error.toFile()).start();
+                Process cli=new ProcessBuilder(java.toString(),"-jar",jar.toString(),"validate-config").directory(root.getParent().toFile()).redirectOutput(output.toFile()).redirectError(error.toFile()).start();
                 cli.getOutputStream().close();boolean done=cli.waitFor(15,TimeUnit.SECONDS);if(!done)cli.destroyForcibly();Assert.assertTrue("Standalone JAR exits",done);
                 String text=new String(Files.readAllBytes(output),StandardCharsets.UTF_8);
                 Assert.assertEquals(text+new String(Files.readAllBytes(error),StandardCharsets.UTF_8),0,cli.exitValue());
-                Assert.assertTrue(text,text.contains(new ConfigurationManager().load(Paths.get("config.yaml")).outputDirectory.toString()));
+                Assert.assertTrue(text,text.contains(pass==1?root.resolve("saved-output").toString():new ConfigurationManager().load(Paths.get("config.yaml")).outputDirectory.toString()));
             }
         } finally {FileSupport.deleteTree(root);}
     }

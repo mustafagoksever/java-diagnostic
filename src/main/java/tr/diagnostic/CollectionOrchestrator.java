@@ -79,17 +79,25 @@ public final class CollectionOrchestrator {
             ThreadDumpCollector dumps = new ThreadDumpCollector(config, executor, scanner);
             int finishedTargets = 0;
             for (JavaProcessInfo target : targets) {
-                CollectionProgress.report(progress, 25 + 40 * finishedTargets / targets.size(), "Java tanılama verileri toplanıyor (" + (finishedTargets + 1) + "/" + targets.size() + ")...");
+                CollectionProgress.report(progress, 25 + 20 * finishedTargets / targets.size(), "Java tanılama verileri toplanıyor (" + (finishedTargets + 1) + "/" + targets.size() + ")...");
                 JvmReport jvm = new JvmReport(target); m.jvms.add(jvm);
                 try { dumps.collect(jvm, staging, progress); }
                 catch (IOException e) { m.errors.add("PID " + target.pid + ": " + e); }
                 finishedTargets++;
             }
+            CollectionProgress.report(progress, 45, "Yerel ek tanılama bilgileri toplanıyor...");
+            boolean logsReady = new LocalDiagnosticsCollector(config, executor).collect(m, staging, progress);
             progress.accept("Log dosyaları kopyalanıyor...");
             CollectionProgress.report(progress, 65, "Log dosyaları kopyalanıyor...");
-            m.logs.addAll(new LogCollector().collect(config, staging));
+            if (logsReady) m.logs.addAll(new LogCollector().collect(config, staging));
+            else for (CollectorConfiguration.LogDirectory source : config.logs) {
+                LogResult skipped = new LogResult(); skipped.source = source.path.toString(); skipped.destination = source.destination;
+                skipped.status = "SKIPPED_PREPARATION_FAILED"; skipped.error = "Yerel log hazırlığı tamamlanamadı; kaynak kopyalanmadı.";
+                m.logs.add(skipped);
+            }
             progress.accept("Thread dump ve log hata özetleri hazırlanıyor...");
             CollectionProgress.report(progress, 75, "Tanılama verileri analiz ediliyor...");
+            new RemoteDiagnosticsReportWriter().write(m, staging);
             try { new ThreadDumpAnalyzer().write(m.jvms, staging); }
             catch (IOException e) { m.errors.add("ThreadDumpAnalyzer: " + e); }
             try { new LogErrorAnalyzer().write(staging); }
@@ -102,7 +110,10 @@ public final class CollectionOrchestrator {
             }
             boolean incomplete = !m.discovery.windowsDiscoverySucceeded || targets.isEmpty() || !m.errors.isEmpty()
                 || m.jvms.stream().anyMatch(j -> j.dumpCount < ThreadDumpCollector.DUMP_COUNT || j.operations.stream().anyMatch(o -> !o.success))
-                || m.logs.stream().anyMatch(LogResult::isIncomplete);
+                || m.logs.stream().anyMatch(LogResult::isIncomplete)
+                || m.operations.stream().anyMatch(o -> !o.success)
+                || (m.ping != null && !RemoteDiagnosticsReportWriter.flag(m.ping,"success"))
+                || (m.vxworks != null && !RemoteDiagnosticsReportWriter.flag(m.vxworks,"success"));
             m.collectionStatus = incomplete ? "PARTIAL" : "COMPLETE";
             m.completedAt = Instant.now().toString();
             CollectionProgress.report(progress, 88, "Rapor dosyaları hazırlanıyor...");

@@ -15,6 +15,8 @@ mode: remote
 zipPassword: 'Aselsan123Radar'
 
 # remote: sunucu bağlantısı. Mevcut WMI/DCOM ve SMB erişimleri kullanılır.
+# windowsDiagnostics, ping, vxworks ve BAT ayarları yerel modda da geçerlidir.
+# Yerelde hedef bu bilgisayardır; host/jdkHome/workShare bağlantı ayarları kullanılmaz.
 # Sunucuya servis/ajan/JAR kurulmaz; kendi geçici script/çıktıları temizlenir.
 # Kullanıcı adı ve parola burada YAZILMAZ; Swing ekranında oturumluk girilir.
 # CLI kullanıcı adı --user veya konsoldan; parola konsol veya ortamdan alınır.
@@ -27,7 +29,7 @@ remote:
   jdkHome: auto                              # SUNUCUDA JDK keşfi; PATH, JAVA_HOME, kayıt defteri ve hedef JVM klasörleri.
   # Sabit aday örneği: jdkHome: 'C:/Program Files/Java/jdk1.8.0_281'
   # PID'nin sürüm/mimari uyumu önce gelir; diğer uygun JDK'lar da denenebilir.
-  timeoutSeconds: 1800                       # Tüm uzak toplama limiti, 60–7200 s.
+  timeoutSeconds: 1800                       # Uzak toplama / yerel ek tanılama limiti, 60–7200 s.
   # Sunucudaki geçici işler önce C:/Temp, alan/erişim yoksa D:/Temp altındadır.
   # Başlangıçta en az 320 MiB gerekir (256 MiB rezerv + 64 MiB çalışma payı).
   # auto: C için Temp/C$, D için Temp/DTemp/D$ paylaşımı denenir.
@@ -35,7 +37,7 @@ remote:
   # Standart kullanıcı için örnek: workShare: 'Temp'. Paylaşım ve WMI/DCOM
   # yetkileri sunucuda önceden verilmiş olmalıdır. Collector bunları oluşturmaz.
   workShare: auto
-  # Loglar kopyalanmadan önce SUNUCUDA çalıştırılır; uygulama köküne göre yol.
+  # Loglar kopyalanmadan önce hedef bilgisayarda çalıştırılır; uygulama köküne göre yol.
   # Örnek: <applicationDirectory>/Log/kaydal.bat. Çalışma klasörü Log olur.
   # BAT'ın bitmesi ve exit code=0 gerekir; hata/timeout varsa log kopyalanmaz,
   # mevcut dump/sistem verileriyle PARTIAL rapor oluşur. Listelemede çalışmaz.
@@ -47,7 +49,7 @@ remote:
   beforeLogCopyBatch: 'Log/kaydal.bat'
   beforeLogCopyTimeoutSeconds: 120           # BAT limiti, 1–600 saniye.
   beforeLogCopyDelaySeconds: 30              # BAT başarıyla bittikten sonra bekle, 0–300 s.
-  # Ping SUNUCUDAN gönderilir; yerel bilgisayardan hedeflere gönderilmez.
+  # Ping uzak modda SUNUCUDAN, yerel modda bu bilgisayardan gönderilir.
   # enabled: false kapatır. Yanıt alınamaması bir tanılama bulgusudur,
   # tek başına collector hatası veya cihazın kapalı olduğunun kanıtı değildir.
   ping:
@@ -61,7 +63,7 @@ remote:
     timeoutMillis: 1000                     # Tek ICMP isteği limiti, 100–5000 ms.
     intervalMillis: 0                       # Aynı IP'deki istekler arası, 0–1000 ms; attempts: 1 ise beklemez.
     # Ağ taramasında 254 ayrı dosya yerine ping/SONUC.txt, results.csv ve results.json yazılır.
-  # VxWorks SUNUCUDAKİ seri portlardan okunur. Yerel modda/listelemede çalışmaz.
+  # VxWorks hedef bilgisayarın seri portlarından okunur; yerelde bu bilgisayar. Listelemede çalışmaz.
   # enabled: false kapatır. Port meşgulse devralınmaz. DTR ve RTS kapalıdır.
   # İstemden sonra version okunur; VxWorks sürüm başlığı yoksa başka komut gönderilmez.
   # i listesindeki her TASKID için tt 0xTASKID ve ti 0xTASKID denenir.
@@ -79,7 +81,7 @@ remote:
     autoDiscoverPorts: true                 # Sunucuda kayıtlı tüm COM portlarını otomatik bul ve sırayla dene.
     ports: []                               # Otomatik keşifte kullanılmaz. Manuel örnek: autoDiscoverPorts: false, ports: ['COM7', 'COM17'].
     # Manuel listede en fazla 64 port; port adları COM1–COM65535 aralığındadır.
-    # Otomatik keşif yalnız sunucuda çalışır; bu bilgisayarın portlarına bağlanmaz.
+    # Otomatik keşif uzak modda sunucunun, yerel modda bu bilgisayarın portlarını kullanır.
     baudRate: 115200                        # Seri hız, 110–921600; sürücü desteklemeli.
     dataBits: 8                             # Veri bitleri, 5–8.
     stopBits: 1                             # Stop bitleri, 1 veya 2.

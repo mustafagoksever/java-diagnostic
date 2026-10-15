@@ -9,11 +9,11 @@ import java.util.*;
 /** Writes readable summaries from server measurements without issuing commands. */
 public final class RemoteDiagnosticsReportWriter {
     public void write(DiagnosticReportGenerator.Manifest manifest, Path staging) throws IOException {
-        if (manifest.ping != null) writePing(manifest.ping, staging, manifest.errors);
-        if (manifest.vxworks != null) writeVxWorks(manifest.vxworks, staging, manifest.errors);
+        if (manifest.ping != null) writePing(manifest.ping, staging, manifest.errors, "local".equals(manifest.mode));
+        if (manifest.vxworks != null) writeVxWorks(manifest.vxworks, staging, manifest.errors, "local".equals(manifest.mode));
     }
-    private void writePing(JsonObject report, Path staging, List<String> errors) throws IOException {
-        StringBuilder text = new StringBuilder("SUNUCUDAN PİNG TESTİ\nKaynak: ").append(value(report, "sourceComputer")).append('\n');
+    private void writePing(JsonObject report, Path staging, List<String> errors, boolean local) throws IOException {
+        StringBuilder text = new StringBuilder(local ? "BU BİLGİSAYARDAN PİNG TESTİ\nKaynak: " : "SUNUCUDAN PİNG TESTİ\nKaynak: ").append(value(report, "sourceComputer")).append('\n');
         if(report.has("subnet") && !report.get("subnet").isJsonNull() && !value(report,"subnet").isEmpty()) text.append("Ağ: ").append(value(report,"subnet")).append('\n');
         int replied=0,unanswered=0,incomplete=0;
         List<JsonObject> results=objectRows(report,"results",errors,"ping results");
@@ -35,9 +35,9 @@ public final class RemoteDiagnosticsReportWriter {
         text.append("Ping yanıtı alınamaması cihazın kapalı olduğunu tek başına kanıtlamaz.\n");
         writeText(staging.resolve("ping/SONUC.txt"), text.toString());
     }
-    private void writeVxWorks(JsonObject report, Path staging, List<String> errors) throws IOException {
+    private void writeVxWorks(JsonObject report, Path staging, List<String> errors, boolean local) throws IOException {
         StringBuilder text = new StringBuilder("VXWORKS TASK İZLERİ VE SOCKET/PORT DURUMU\nÖnce version ile VxWorks sürümü doğrulanır; ifconfig, gerekirse ifShow ile cihazın IP/MAC bilgisi okunur.\nArdından config ile seçilen özel komut ve ilk i listesindeki TASKID'ler için tt 0xTASKID ve ti 0xTASKID denenir.\nEk sorgular: checkStack 0, taskShow 0,2, devs, whoami, w; PEND task'lar için tw 0xTASKID.\n\n");
-        if ("auto".equals(value(report,"discoveryMode"))) text.append("Port seçimi: SUNUCUDA OTOMATİK KEŞİF\nBulunan portlar: ").append(joined(report,"detectedPorts")).append('\n');
+        if ("auto".equals(value(report,"discoveryMode"))) text.append(local ? "Port seçimi: BU BİLGİSAYARDA OTOMATİK KEŞİF\nBulunan portlar: " : "Port seçimi: SUNUCUDA OTOMATİK KEŞİF\nBulunan portlar: ").append(joined(report,"detectedPorts")).append('\n');
         else text.append("Port seçimi: config'teki port listesi\n");
         for (JsonElement error : ResourceMonitor.array(report,"errors")) if(error.isJsonPrimitive()) text.append("Port keşif notu: ").append(error.getAsString()).append('\n');
         text.append('\n');

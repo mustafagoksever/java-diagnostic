@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$RequestFile)
+param([Parameter(Mandatory=$true)][string]$RequestFile,[switch]$LibraryOnly)
 $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
 $settings=Get-Content -LiteralPath $RequestFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $jobRoot=[IO.Path]::GetFullPath($PSScriptRoot)
@@ -498,6 +498,7 @@ function Write-CollectionSummary {
     $incompleteLogs=@($result.logs|Where-Object{$_.status -ne 'COPIED' -or $_.changedDuringCopy}).Count
     Activity ('[Sunucu] Toplama adimlari bitti; ust duzey hata/not='+$result.errors.Count+' | basarisiz komut denemesi='+$failedAttempts+' | eksik/degisen log='+$incompleteLogs+'. Ciktilar envantere aliniyor ve SHA-256 hesaplanacak.') 72 'Sunucu dosyaları aktarım için doğrulanıyor...'
 }
+if($LibraryOnly){return}
 try {
     $collectionPaths=if($settings.action -eq 'collect'){Resolve-CollectionPaths}else{$null}
     Activity ('[Sunucu] Toplama yardimcisi calisiyor; islem: '+$settings.action)

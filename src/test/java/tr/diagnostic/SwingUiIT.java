@@ -9,6 +9,52 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** Uses the real Swing event queue and scanner; creates no visible test windows. */
 public class SwingUiIT {
+    @Test public void settingsModeChangesRefreshSourceControlsAndSaveTheSelectedMode() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows());Assume.assumeFalse(GraphicsEnvironment.isHeadless());
+        Path root=Files.createTempDirectory("diagnostic-settings-mode-");
+        AtomicReference<SettingsDialog> ref=new AtomicReference<>();AtomicReference<CollectorConfiguration> applied=new AtomicReference<>();
+        try {
+            Path install=Files.createDirectory(root.resolve("install"));
+            Path yaml=Files.write(root.resolve("config.yaml"),("mode: local\nremote: {host: '192.0.2.1'}\ninstallationDirectory: '"+install.toString().replace('\\','/')+"'\napplicationDirectory: '.'\nlogs: [{base: config, path: logs}]\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            ConfigurationFile file=new ConfigurationFile(yaml);CollectorConfiguration config=file.load();
+            SwingUtilities.invokeAndWait(()->{
+                SettingsDialog dialog=new SettingsDialog(null,config,file,true,applied::set);ref.set(dialog);dialog.addNotify();dialog.validate();
+                JComboBox<?> mode=(JComboBox<?>)findNamed(dialog.getContentPane(),"setting.mode");JTable table=findTable(dialog.getContentPane());
+                Assert.assertTrue(findButton(dialog.getContentPane(),"Klasör Seç").isVisible());
+                Assert.assertTrue(containsText(dialog.getContentPane(),"Kaynaklar bu bilgisayardan"));
+                for(String selection:new String[]{"remote","local","remote"}){
+                    mode.setSelectedItem(selection);boolean local="local".equals(selection);
+                    Assert.assertEquals(local,findButton(dialog.getContentPane(),"Klasör Seç").isVisible());
+                    Assert.assertTrue(containsText(dialog.getContentPane(),local?"Kaynaklar bu bilgisayardan":"Kaynak yollarını sunucudaki"));
+                    JLabel renderer=(JLabel)table.prepareRenderer(table.getCellRenderer(0,1),0,1);
+                    Assert.assertEquals(local?"Konfigürasyon klasörü":"Kurulum dizini",renderer.getText());
+                    Assert.assertEquals("logs",table.getValueAt(0,0));Assert.assertEquals("config",table.getValueAt(0,1));
+                }
+                findButton(dialog.getContentPane(),"Kaydet").doClick();
+            });
+            long limit=System.nanoTime()+10_000_000_000L;while(applied.get()==null&&System.nanoTime()<limit)Thread.sleep(25);
+            Assert.assertNotNull("Settings saved",applied.get());Assert.assertEquals("remote",applied.get().mode);Assert.assertEquals("remote",file.load().mode);
+            SwingUtilities.invokeAndWait(()->Assert.assertFalse(ref.get().isDisplayable()));
+        } finally {if(ref.get()!=null)SwingUtilities.invokeAndWait(()->ref.get().dispose());FileSupport.deleteTree(root);}
+    }
+    @Test public void normalGuiHonorsExplicitLocalModeWithoutServerCredentials() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows());Assume.assumeFalse(GraphicsEnvironment.isHeadless());
+        Path root=Files.createTempDirectory("diagnostic-local-gui-");String title="Local fixture "+java.util.UUID.randomUUID();
+        try {
+            Path yaml=Files.write(root.resolve("config.yaml"),("applicationTitle: '"+title+"'\nmode: remote\nlogs: []\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            Assert.assertEquals(-1,Main.run(new String[]{"gui","--local","--config",yaml.toString()}));
+            boolean[] found={false};SwingUtilities.invokeAndWait(()->{
+                for(Window window:Window.getWindows())if(window instanceof CollectorFrame&&title.equals(((CollectorFrame)window).getTitle())){
+                    CollectorFrame frame=(CollectorFrame)window;found[0]=true;
+                    Assert.assertFalse("Local collection needs no server password",findPassword(frame.getContentPane()).getParent().isVisible());
+                    Assert.assertNull(findMode(frame.getContentPane()));Assert.assertTrue(containsText(frame.getContentPane(),"Bu bilgisayarda rapor oluşturulacak"));
+                }
+            });Assert.assertTrue(found[0]);
+        } finally {
+            SwingUtilities.invokeAndWait(()->{for(Window window:Window.getWindows())if(window instanceof CollectorFrame&&title.equals(((CollectorFrame)window).getTitle()))window.dispose();});
+            FileSupport.deleteTree(root);
+        }
+    }
     @Test public void startupConfigFailureShowsDialogOnEdtAndReturnsFailure() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());Assume.assumeFalse(GraphicsEnvironment.isHeadless());
         java.util.concurrent.FutureTask<Integer> launch=new java.util.concurrent.FutureTask<>(()->Main.run(new String[]{"gui","--config","target/nonexistent-startup-config.yaml"}));
@@ -41,6 +87,7 @@ public class SwingUiIT {
             CollectorFrame frame = new CollectorFrame(config);
             try {
                 Assert.assertEquals(config.applicationTitle, frame.getTitle());
+                Assert.assertEquals("Ayarlar",frame.getJMenuBar().getMenu(0).getText());
                 frame.addNotify(); frame.validate();
                 JPasswordField password = findPassword(frame.getContentPane());
                 Assert.assertNull(findMode(frame.getContentPane()));Assert.assertNotNull(password);Assert.assertEquals(0,password.getPassword().length);
@@ -66,23 +113,57 @@ public class SwingUiIT {
     }
     @Test public void adminScreenSavesServerAddressAndRetainsLocalModeAndLogs() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());Assume.assumeFalse(GraphicsEnvironment.isHeadless());
-        java.util.prefs.Preferences store=java.util.prefs.Preferences.userRoot().node("tr/diagnostic/test-admin-ui-"+java.util.UUID.randomUUID());
+        Path settingsRoot=Files.createTempDirectory("diagnostic-settings-ui-");
+        Path configPath=Files.write(settingsRoot.resolve("config.yaml"),"remote: {host: '192.0.2.1'}\nlogs: []\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        ConfigurationFile file=new ConfigurationFile(configPath);
         CollectorConfiguration config=new CollectorConfiguration();config.outputDirectory=Paths.get("reports").toAbsolutePath();
         AtomicReference<CollectorFrame> ref=new AtomicReference<>();
         try{
             SwingUtilities.invokeAndWait(()->{
-                CollectorFrame frame=new CollectorFrame(config,true,new ServerEndpointSettings(store));ref.set(frame);frame.addNotify();frame.validate();
+                CollectorFrame frame=new CollectorFrame(config,true,file);ref.set(frame);frame.addNotify();frame.validate();
                 Assert.assertEquals(config.applicationTitle + " — Admin", frame.getTitle());
                 Assert.assertNotNull(findMode(frame.getContentPane()));Assert.assertNotNull(findTable(frame.getContentPane()));Assert.assertNotNull(findTextArea(frame.getContentPane()));
-                Assert.assertEquals(3,countTextFields(frame.getContentPane()));
-                findField(frame.getContentPane(),"serverHost").setText("192.0.2.25");
+                Assert.assertEquals(2,countTextFields(frame.getContentPane()));
+                Assert.assertEquals("Ayarlar",frame.getJMenuBar().getMenu(0).getText());
                 findField(frame.getContentPane(),"username").setText("session-user");findPassword(frame.getContentPane()).setText("session-password");
-                findButton(frame.getContentPane(),"Sunucu IP'sini Kaydet").doClick();
+            });
+            SwingUtilities.invokeLater(()->ref.get().getJMenuBar().getMenu(0).getItem(0).doClick());
+            AtomicReference<JDialog> dialog=new AtomicReference<>();
+            long openDeadline=System.nanoTime()+5_000_000_000L;
+            while(dialog.get()==null&&System.nanoTime()<openDeadline){SwingUtilities.invokeAndWait(()->{for(Window w:Window.getWindows())if(w instanceof SettingsDialog&&w.getOwner()==ref.get()&&w.isShowing())dialog.set((JDialog)w);});Thread.sleep(25);}
+            Assert.assertNotNull("Settings menu opens dialog",dialog.get());
+            SwingUtilities.invokeAndWait(()->{
+                JDialog settings=dialog.get();
+                findField(settings.getContentPane(),"settingsHost").setText("192.0.2.25");
+                findField(settings.getContentPane(),"settingsInstallation").setText("D:/ESM");
+                findField(settings.getContentPane(),"settingsApplication").setText("app");
+                findButton(settings.getContentPane(),"Dizin Ekle").doClick();
+                JTable sources=findTable(settings.getContentPane());sources.setValueAt("Log",0,0);sources.setValueAt("application",0,1);sources.setValueAt("app-logs",0,2);
+                sources.setValueAt("250",0,4);sources.setValueAt("72",0,5);sources.setValueAt("log, .txt",0,6);
+                findField(settings.getContentPane(),"setting.applicationTitle").setText("Updated settings title");
+                JPasswordField zip=(JPasswordField)findField(settings.getContentPane(),"setting.zipPassword");Assert.assertEquals(0,zip.getPassword().length);zip.setText("ui-archive-secret");
+                ((JSpinner)findNamed(settings.getContentPane(),"setting.remote.vxworks.maxOutputMb")).setValue(24);
+                ((JSpinner)findNamed(settings.getContentPane(),"setting.resourceMonitoringSeconds")).setValue(17);
+                ((JCheckBox)findNamed(settings.getContentPane(),"setting.remote.windowsDiagnostics")).setSelected(false);
+                preview(settings.getContentPane(),"settings-server-preview.png");
+                for(Component c:settings.getContentPane().getComponents())if(c instanceof JTabbedPane)((JTabbedPane)c).setSelectedIndex(1);
+                preview(settings.getContentPane(),"settings-directories-preview.png");
+                for(Component c:settings.getContentPane().getComponents())if(c instanceof JTabbedPane){
+                    JTabbedPane tabs=(JTabbedPane)c;Assert.assertEquals(6,tabs.getTabCount());
+                    for(int tab=2;tab<tabs.getTabCount();tab++){tabs.setSelectedIndex(tab);preview(settings.getContentPane(),"settings-tab-"+tab+"-preview.png");}
+                }
+                findButton(settings.getContentPane(),"Kaydet").doClick();
             });
             long limit=System.nanoTime()+10_000_000_000L;boolean[] saved={false};
-            while(System.nanoTime()<limit){SwingUtilities.invokeAndWait(()->saved[0]=findButton(ref.get().getContentPane(),"Sunucu IP'sini Kaydet").isEnabled());if(saved[0])break;Thread.sleep(50);}
+            while(System.nanoTime()<limit){SwingUtilities.invokeAndWait(()->saved[0]=!dialog.get().isDisplayable());if(saved[0])break;Thread.sleep(50);}
             Assert.assertTrue("Address save completes",saved[0]);Assert.assertEquals("192.0.2.25",config.remoteHost);
-            Assert.assertEquals("192.0.2.25",new ServerEndpointSettings(store).hostOrDefault("fallback"));Assert.assertArrayEquals(new String[]{"serverHost"},store.keys());
+            CollectorConfiguration reloaded=file.load();Assert.assertEquals("192.0.2.25",reloaded.remoteHost);Assert.assertEquals("D:/ESM",reloaded.installationPath);Assert.assertEquals("Log",reloaded.logs.get(0).sourcePath);
+            Assert.assertEquals("app-logs",config.logs.get(0).destination);
+            Assert.assertEquals(250L*1024*1024,reloaded.logs.get(0).maxFileSizeBytes);Assert.assertEquals(72,reloaded.logs.get(0).modifiedWithinHours);Assert.assertEquals(java.util.Arrays.asList(".log",".txt"),reloaded.logs.get(0).extensions);
+            Assert.assertEquals("Updated settings title",config.applicationTitle);Assert.assertEquals(24,config.vxworks.maxOutputMb);Assert.assertEquals(17,config.resourceMonitoringSeconds);Assert.assertFalse(config.remoteWindowsDiagnostics);
+            Assert.assertEquals(config.applicationTitle,reloaded.applicationTitle);Assert.assertEquals(config.vxworks.maxOutputMb,reloaded.vxworks.maxOutputMb);
+            Assert.assertEquals("ui-archive-secret",new String(config.zipPasswordCopy()));Assert.assertEquals("ui-archive-secret",new String(reloaded.zipPasswordCopy()));
+            String savedYaml=new String(Files.readAllBytes(configPath),java.nio.charset.StandardCharsets.UTF_8);Assert.assertFalse(savedYaml.contains("session-user")||savedYaml.contains("session-password"));
             SwingUtilities.invokeAndWait(()->{
                 CollectorFrame frame=ref.get();Assert.assertTrue(findTextArea(frame.getContentPane()).getText().contains("kaydedildi"));
                 frame.getContentPane().setSize(frame.getWidth(),frame.getHeight());layout(frame.getContentPane());
@@ -92,7 +173,7 @@ public class SwingUiIT {
                 JPasswordField password=findPassword(frame.getContentPane());findMode(frame.getContentPane()).setSelectedItem("Yerel Bilgisayar");
                 Assert.assertEquals(0,password.getPassword().length);Assert.assertFalse(password.getParent().isVisible());
             });
-        }finally{if(ref.get()!=null)SwingUtilities.invokeAndWait(()->ref.get().dispose());store.removeNode();java.util.prefs.Preferences.userRoot().flush();}
+        }finally{if(ref.get()!=null)SwingUtilities.invokeAndWait(()->{for(Window window:Window.getWindows())if(window.getOwner()==ref.get())window.dispose();ref.get().dispose();});FileSupport.deleteTree(settingsRoot);}
     }
     @Test public void listingKeepsEdtResponsiveAndRendersTurkishUi() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows()); Assume.assumeFalse(GraphicsEnvironment.isHeadless());
@@ -167,7 +248,7 @@ public class SwingUiIT {
         };
         try {
             SwingUtilities.invokeAndWait(() -> {
-                CollectorFrame frame = new CollectorFrame(config, false, new ServerEndpointSettings(), writer); ref.set(frame);
+                CollectorFrame frame = new CollectorFrame(config, false, new ConfigurationFile(root.resolve("config.yaml")), writer); ref.set(frame);
                 frame.addNotify(); frame.validate();
                 findField(frame.getContentPane(), "username").setText("session-user");
                 findPassword(frame.getContentPane()).setText("session-secret");
@@ -234,7 +315,12 @@ public class SwingUiIT {
         return null;
     }
     private static JTextField findField(Container parent,String name){for(Component c:parent.getComponents()){if(c instanceof JTextField&&name.equals(c.getName()))return (JTextField)c;if(c instanceof Container){JTextField found=findField((Container)c,name);if(found!=null)return found;}}return null;}
+    private static Component findNamed(Container parent,String name){for(Component c:parent.getComponents()){if(name.equals(c.getName()))return c;if(c instanceof Container){Component found=findNamed((Container)c,name);if(found!=null)return found;}}return null;}
     private static void layout(Container parent) { parent.doLayout(); for (Component c : parent.getComponents()) if (c instanceof Container) layout((Container) c); }
+    private static void preview(Container parent,String name){
+        layout(parent);BufferedImage image=new BufferedImage(parent.getWidth(),parent.getHeight(),BufferedImage.TYPE_INT_RGB);Graphics2D graphics=image.createGraphics();parent.printAll(graphics);graphics.dispose();
+        try{Path dir=Files.createDirectories(Paths.get("target/windows-evidence"));javax.imageio.ImageIO.write(image,"png",dir.resolve(name).toFile());}catch(Exception e){throw new RuntimeException(e);}
+    }
     private static JTable findTable(Container parent) {
         for (Component c : parent.getComponents()) {
             if (c instanceof JTable) return (JTable) c;

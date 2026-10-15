@@ -7,6 +7,8 @@
 applicationTitle: 'Aselsan ESM diagnostic'     # Pencere başlığı; admin modunda sonuna Admin eklenir.
 mode: remote                  # local seçerseniz bu bilgisayarda toplar.
 remote:
+  # Tanılama/BAT/ping/VxWorks ayarları yerel modda da bu bilgisayara uygulanır.
+  # host/jdkHome/workShare yalnız uzak bağlantı içindir; yerel mod bağlantı parolası istemez.
   # Sunucuda salt okunur ağ/süreç/servis/sürücü/oturum/saat ve olay sorguları.
   # ZIP içinde server/SONUC.txt sonuçları gösterir. Listeleme bunları çalıştırmaz.
   windowsDiagnostics: true
@@ -17,7 +19,7 @@ remote:
   beforeLogCopyBatch: 'Log/collect-logs.bat' # Sunucuda, uygulama köküne göre; '' kapatır.
   beforeLogCopyTimeoutSeconds: 120    # Bitmeden log kopyalama başlamaz.
   beforeLogCopyDelaySeconds: 30       # BAT bittikten sonra 30 saniye bekle.
-  # Kapalı örnek; enabled: true ile yalnız uzak collect sırasında etkinleşir.
+  # Kapalı örnek; enabled: true ile yerel/uzak collect sırasında etkinleşir.
   ping:
     enabled: false
     subnet: '192.0.2.0/24'            # Sunucudan .1–.254 taranır; /24–/30 ağ adresi. Ağ/broadcast hariç.
