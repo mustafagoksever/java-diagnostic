@@ -40,8 +40,9 @@ public final class ConfigurationManager {
             throw new IOException("YAML okunamadı; biçimi, tekrar eden alanları ve güvenli veri tiplerini kontrol edin.");
         }
         Map<String, Object> root = map(loaded, "config");
-        keys(root, "mode", "remote", "zipPassword", "outputDirectory", "commandTimeoutSeconds", "scanTimeoutSeconds", "jdkHomes", "additionalProcessNames", "collectGcStats", "logs", "installationDirectory", "applicationDirectory", "collectionDelaySeconds", "resourceMonitoringSeconds", "resourceSampleIntervalSeconds");
+        keys(root, "applicationTitle", "mode", "remote", "zipPassword", "outputDirectory", "commandTimeoutSeconds", "scanTimeoutSeconds", "jdkHomes", "additionalProcessNames", "collectGcStats", "logs", "installationDirectory", "applicationDirectory", "collectionDelaySeconds", "resourceMonitoringSeconds", "resourceSampleIntervalSeconds");
         CollectorConfiguration c = new CollectorConfiguration();
+        c.applicationTitle = string(root, "applicationTitle", c.applicationTitle);
         if (root.containsKey("zipPassword")) {
             String secret = string(root, "zipPassword", null);
             if (secret.length() < 12) throw new IOException("zipPassword en az 12 karakter olmalı.");

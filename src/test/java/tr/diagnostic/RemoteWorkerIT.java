@@ -67,6 +67,18 @@ public class RemoteWorkerIT {
             Assert.assertEquals(before,FileSupport.sha256(log)); Assert.assertEquals(before,FileSupport.sha256(job.resolve("data/logs/KA/log/app.log")));
             Assert.assertTrue(Files.isRegularFile(job.resolve("data/kaynak-izleme.json"))); Assert.assertTrue(Files.isRegularFile(job.resolve("data/remote-system.json")));
             String activity=new String(Files.readAllBytes(job.resolve("data/debug/activity-worker.jsonl")),StandardCharsets.UTF_8);
+            int lastPercent = -1;
+            for (String line : activity.split("\n")) {
+                if (line.trim().isEmpty()) continue;
+                JsonObject entry=JsonParser.parseString(line).getAsJsonObject();
+                if (entry.has("percent")) {
+                    int percent=entry.get("percent").getAsInt();
+                    Assert.assertTrue("Server progress stays monotonic",percent >= lastPercent);
+                    Assert.assertTrue("Server cannot finish client packaging",percent <= 72);
+                    Assert.assertFalse(entry.get("stage").getAsString().isEmpty());lastPercent=percent;
+                }
+            }
+            Assert.assertEquals(72,lastPercent);
             Assert.assertTrue(activity,activity.contains("[Kesif] TAMAMLANDI"));
             Assert.assertTrue(activity,activity.contains("3/3 dump basarili"));
             Assert.assertTrue(activity,activity.contains("uzanti filtresi"));

@@ -40,7 +40,7 @@ public final class RemotePowerShellTransport implements RemoteTransport {
                         if (line.length() > 16 * 1024 * 1024) throw new IOException("Uzak sonuç boyut sınırını aştı.");
                         if (line.trim().isEmpty()) continue;
                         JsonObject event = JsonParser.parseString(line).getAsJsonObject();
-                        if ("progress".equals(ResourceMonitor.text(event, "event"))) progress.accept(ResourceMonitor.text(event, "message"));
+                        if ("progress".equals(ResourceMonitor.text(event, "event"))) forwardProgress(event, progress);
                         if ("result".equals(ResourceMonitor.text(event, "event"))) last = event;
                     }
                 }
@@ -88,6 +88,14 @@ public final class RemotePowerShellTransport implements RemoteTransport {
             readers.shutdownNow();
             try { FileSupport.deleteTree(scriptDirectory); }
             catch (IOException e) { progress.accept("Yerel yardımcı script klasörü temizlenemedi: " + scriptDirectory); }
+        }
+    }
+    static void forwardProgress(JsonObject event, Consumer<String> listener) {
+        listener.accept(ResourceMonitor.text(event, "message"));
+        if (event.has("percent") && !event.get("percent").isJsonNull() && event.has("stage") && !event.get("stage").isJsonNull()) {
+            int percent = event.get("percent").getAsInt();
+            // Transport owns only preparation, server work and verified download.
+            if (percent >= 0 && percent <= 85) CollectionProgress.report(listener, percent, event.get("stage").getAsString());
         }
     }
 }

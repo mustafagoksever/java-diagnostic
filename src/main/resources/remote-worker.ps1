@@ -18,8 +18,9 @@ $cleanupRequested=$false;$lastHeartbeat=$null;$lastHeartbeatAt=0.0;$nextHeartbea
 $workDisk=New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($jobRoot))
 $minimumFreeBytes=256MB
 function Write-Json($path,$value) { [IO.File]::WriteAllText($path,($value|ConvertTo-Json -Depth 18),(New-Object Text.UTF8Encoding($false))) }
-function Activity([string]$message) {
+function Activity([string]$message,[int]$percent=-1,[string]$stage='') {
     $entry=[ordered]@{timestampUtc=[DateTime]::UtcNow.ToString('o');source='worker';message=$message}
+    if($percent -ge 0){$entry.percent=$percent;$entry.stage=$stage}
     [IO.File]::AppendAllText((Join-Path $jobRoot 'activity-worker.jsonl'),(($entry|ConvertTo-Json -Compress)+"`n"),(New-Object Text.UTF8Encoding($false)))
 }
 # Publish the actual worker identity. Win32_Process.Create or subsequent WMI
@@ -491,7 +492,7 @@ try {
     $collectionPaths=if($settings.action -eq 'collect'){Resolve-CollectionPaths}else{$null}
     Activity ('[Sunucu] Toplama yardimcisi calisiyor; islem: '+$settings.action)
     if($settings.action -eq 'collect' -and $settings.collectionDelaySeconds -gt 0){Activity ('[Sunucu] Baslangic beklemesi: '+$settings.collectionDelaySeconds+' sn');Start-Sleep -Seconds $settings.collectionDelaySeconds}
-    Activity '[Kesif] Sunucudaki Java surecleri ve JDK araclari araniyor...'
+    Activity '[Kesif] Sunucudaki Java surecleri ve JDK araclari araniyor...' 12 'Java süreçleri aranıyor...'
     $result.discovery=Scan-Java
     Activity ('[Kesif] '+$(if($result.discovery.windowsDiscoverySucceeded){'TAMAMLANDI'}else{'KISMI/BASARISIZ'})+': '+@($result.discovery.processes).Count+' Java sureci bulundu.')
     foreach($issue in $result.discovery.errors){Activity ('[Kesif] HATA/NOT: '+$issue)}
@@ -522,11 +523,13 @@ try {
         }else{Activity '[Kaynak] Sureli kaynak takibi ayarlarda kapali.'}
         try {
             $pidsJson=ConvertTo-Json -InputObject @($targets.pid) -Compress
+            Activity '[Ilerleme] Sistem bilgileri toplaniyor.' 18 'Sistem bilgileri toplanıyor...'
             $setup='$targetPids=@(ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('''+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pidsJson))+'''))));'
             $system=Run-Script ([IO.File]::ReadAllText((Join-Path $jobRoot 'system-info.ps1'),[Text.Encoding]::UTF8)) $setup 'system-info' $settings.scanTimeoutSeconds
             Write-Json (Join-Path $dataRoot 'remote-system.json') $system
             $result.errors+=@($system.errors)
         } catch {$result.errors+=,$_.Exception.Message}
+        $finishedDumpSteps=0
         foreach($p in $targets) {
             Deadline
             Activity ('[JVM] PID '+$p.pid+' icin surum, GC ve thread dump toplama basladi.')
@@ -541,10 +544,13 @@ try {
                 if($sample -gt 1){Start-Sleep -Seconds 5}
                 $op=Try-Tools $jvm $p @('jcmd','jstack') 'thread-dump' $sample $dir
                 if($op.success){$jvm.dumpCount++}
+                $finishedDumpSteps++
+                Activity ('[Ilerleme] Dump adimi '+$finishedDumpSteps+'/'+($targets.Count*3)+' tamamlandi.') ([int][Math]::Floor(22+23*$finishedDumpSteps/($targets.Count*3))) 'Java tanılama verileri toplanıyor...'
                 Write-Json (Join-Path $jobRoot 'progress.json') ([pscustomobject]@{jobId=$settings.jobId;phase='dump';pid=$p.pid;sample=$sample;dumpCount=$jvm.dumpCount})
             }
             Activity ('[JVM] PID '+$p.pid+' TAMAMLANDI: '+$jvm.dumpCount+'/3 dump basarili.')
         }
+        Activity '[Ilerleme] JVM toplama adimlari bitti.' 45 'Windows tanılama bilgileri toplanıyor...'
         if($settings.windowsDiagnostics){try{. (Join-Path $jobRoot 'remote-windows.ps1');Collect-WindowsDiagnostics}
         catch{Activity ('[Windows] BASARISIZ: '+$_.Exception.Message);Deadline;$result.errors+=,('WINDOWS_DIAGNOSTICS_FAILED: '+$_.Exception.Message)}
         }
@@ -553,6 +559,7 @@ try {
             catch{Activity ('[Ek tanilama] BASARISIZ: '+$_.Exception.Message);Deadline;$result.errors+=,('EXTRA_DIAGNOSTICS_FAILED: '+$_.Exception.Message)}
         }else{Activity '[Ek tanilama] Ping ve VxWorks ayarlarda kapali.'}
         $install=$collectionPaths.installationDirectory;$app=$collectionPaths.applicationDirectory
+        Activity '[Ilerleme] Log hazirligi basliyor.' 65 'Log dosyaları hazırlanıyor...'
         $sources=@();$index=0;$logsReady=$true
         if(![string]::IsNullOrWhiteSpace([string]$settings.beforeLogCopyBatch)){
             $preparation=Run-BeforeLogCopy $app;$result.operations+=,$preparation
@@ -563,6 +570,7 @@ try {
         }else{Activity '[Log hazirligi] Kopyalama oncesi BAT ayarlarda tanimli degil; dogrudan kaynaklar taranacak.'}
         foreach($spec in $settings.logs) {
             Deadline
+            Activity '[Ilerleme] Log kaynagi isleniyor.' ([int][Math]::Floor(66+4*$sources.Count/[Math]::Max(1,@($settings.logs).Count))) 'Log dosyaları kopyalanıyor...'
             $source=Resolve-Source $spec $install $app
             Activity ('[Log kaynagi] Tarama basladi: '+$source+' | hedef '+$spec.destination+' | tarih penceresi '+$spec.modifiedWithinHours+' saat')
             $sources+=,[pscustomobject]@{source=$source;destination=$spec.destination}
@@ -596,6 +604,7 @@ try {
     }
 }catch{Activity ('[Sunucu] ISLEM HATASI: '+$_.Exception.Message);$result.errors+=,$_.Exception.Message}
 finally{
+    Activity '[Ilerleme] Sunucu olcumleri sonlandiriliyor.' 70 'Sunucu ölçümleri tamamlanıyor...'
     if($monitorProcess -and $monitorStarted){
         Activity '[Kaynak] Olcumun tamamlanmasi ve cikti akisinin kapanmasi bekleniyor...'
         try{
@@ -611,7 +620,7 @@ finally{
     if($monitorOutput){$monitorOutput.Dispose()};if($monitorError){$monitorError.Dispose()}
     if($cleanupRequested -or (Test-Path -LiteralPath (Join-Path $jobRoot 'cancel.txt'))){Delete-OwnJob}
     else {
-        Activity ('[Sunucu] Toplama adimlari bitti; '+$result.errors.Count+' hata/not. Ciktilar envantere aliniyor ve SHA-256 hesaplanacak.')
+        Activity ('[Sunucu] Toplama adimlari bitti; '+$result.errors.Count+' hata/not. Ciktilar envantere aliniyor ve SHA-256 hesaplanacak.') 72 'Sunucu dosyaları aktarım için doğrulanıyor...'
         $debugRoot=Join-Path $dataRoot 'debug';[void][IO.Directory]::CreateDirectory($debugRoot)
         foreach($journal in @(Get-ChildItem -LiteralPath $jobRoot -Filter 'activity-*.jsonl' -File)){[IO.File]::Copy($journal.FullName,(Join-Path $debugRoot $journal.Name),$true)}
         $serverCompleted=[DateTimeOffset]::Now

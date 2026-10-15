@@ -1,4 +1,8 @@
-# Java 8 Windows Diagnostic Collector
+# Aselsan ESM diagnostic
+
+Pencere başlığı `config.yaml` içindeki `applicationTitle` alanından okunur. Varsayılanı `Aselsan ESM diagnostic`; admin penceresinde sonuna ` — Admin` eklenir. Gömülü ayarları güncellemek için JAR'ı yeniden paketleyin; dış YAML için `--config` kullanın.
+
+Rapor hazırlanırken normal ve admin ekranında yüzde ve mevcut aşama görünür. Yüzde tamamlanan işlem aşamalarına göre hesaplanır; süre tahmini değildir. Dosya aktarımı doğrulanan dosya sayısına göre ilerler. ZIP doğrulaması ve temizlik aşaması bitmeden %100 gösterilmez. Eksik verilerle üretilen rapor %100'de ayrıca belirtilir; başarısız işlem son yüzdede durur.
 
 Uzak rapor ayrıca Windows sunucusunun IP/port/rota/ARP bilgilerini, süreç/servis/sürücü listesini, oturum ve saat servisi durumunu, son 48 saatten hata/uyarı olaylarını toplar. ZIP içinde önce `server/SONUC.txt` dosyasına bakın. `remote.windowsDiagnostics` varsayılan olarak açıktır; sorgular sunucuda çalışır, ayar değiştirmez. Ayrıntılar [adım adım açıklamada](docs/hata-raporu-adimlari.md) yer alır.
 

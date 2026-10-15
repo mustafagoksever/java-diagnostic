@@ -53,6 +53,7 @@ function Select-VxWorksPorts($vx){
 }
 function Collect-RemoteExtraDiagnostics {
     if($settings.action -ne 'collect'){return}
+    Activity '[Ilerleme] Ag tanilama adimlari basliyor.' 50 'Ağ tanılama verileri toplanıyor...'
     if($settings.ping.enabled){
         Activity ('[Ping] SUNUCUDAN test basliyor: '+$settings.ping.addresses.Count+' hedef, IP basina '+$settings.ping.attempts+' istek.')
         $parallelism=if($settings.ping.parallelism){[int]$settings.ping.parallelism}else{16}
@@ -68,8 +69,10 @@ function Collect-RemoteExtraDiagnostics {
         $vx=[pscustomobject]@{discoveryMode=if($settings.vxworks.autoDiscoverPorts){'auto'}else{'configured'};detectedPorts=@();ports=@();success=$true;errors=@()}
         $result|Add-Member -NotePropertyName vxworks -NotePropertyValue $vx -Force
         $ports=@(Select-VxWorksPorts $vx)
+        $finishedPorts=0
         foreach($port in $ports){
             Deadline
+            Activity '[Ilerleme] Seri cihaz okunuyor.' ([int][Math]::Floor(55+10*$finishedPorts/[Math]::Max(1,$ports.Count))) ('Seri cihazlar okunuyor ('+($finishedPorts+1)+'/'+$ports.Count+')...')
             if($port -notmatch '^COM[1-9][0-9]{0,4}$' -or [int]$port.Substring(3) -gt 65535){throw 'Invalid COM port'}
             $artifact='vxworks/ports/port-'+$port+'/port-result.json'
             Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='vxworks';message=($port+': VxWorks task ve ag bilgileri toplaniyor...')}
@@ -85,6 +88,7 @@ function Collect-RemoteExtraDiagnostics {
             $vx.ports[-1]|Add-Member -NotePropertyName diagnosticAttemptedCount -NotePropertyValue (@($probe.diagnostics|Where-Object{$null -ne $_}).Count)
             $vx.ports[-1]|Add-Member -NotePropertyName diagnosticCollectedCount -NotePropertyValue (@($probe.diagnostics|Where-Object{$_.collected}).Count)
             Activity ('[VxWorks] '+$port+' SONUC: '+$probe.status+' | '+$probe.initialTaskCount+' task | tt frame='+$probe.tracesWithFrames+' | ti='+$probe.taskInfosCollected+' | '+$probe.error)
+            $finishedPorts++
         }
     }else{Activity '[VxWorks] Ayarlarda kapali; seri port acilmayacak.'}
 }

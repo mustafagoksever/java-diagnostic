@@ -34,9 +34,13 @@ public class SwingUiIT {
         Assume.assumeTrue(PowerShell.isWindows()); Assume.assumeFalse(GraphicsEnvironment.isHeadless());
         CollectorConfiguration config = new CollectorConfiguration(); config.outputDirectory = Paths.get("reports").toAbsolutePath();
         config.remoteHost = "fixture-server";
+        config.applicationTitle = "Özel Tanılama Başlığı";
+        java.lang.reflect.Method update = CollectorFrame.class.getDeclaredMethod("showCollectionProgress", CollectionProgress.Event.class);
+        update.setAccessible(true);
         SwingUtilities.invokeAndWait(() -> {
             CollectorFrame frame = new CollectorFrame(config);
             try {
+                Assert.assertEquals(config.applicationTitle, frame.getTitle());
                 frame.addNotify(); frame.validate();
                 JPasswordField password = findPassword(frame.getContentPane());
                 Assert.assertNull(findMode(frame.getContentPane()));Assert.assertNotNull(password);Assert.assertEquals(0,password.getPassword().length);
@@ -45,6 +49,14 @@ public class SwingUiIT {
                 Assert.assertNotNull(findButton(frame.getContentPane(),"Hata Raporu Oluştur"));Assert.assertNotNull(findButton(frame.getContentPane(),"Çıktı Klasörünü Aç"));
                 Assert.assertEquals("Only username and password are text fields", 2, countTextFields(frame.getContentPane()));
                 Assert.assertFalse("Server settings not visible", containsText(frame.getContentPane(), config.remoteHost) || containsText(frame.getContentPane(), config.remoteJdkHome));
+                try {
+                    update.invoke(frame, new CollectionProgress.Event(65, "Log dosyaları hazırlanıyor..."));
+                    update.invoke(frame, new CollectionProgress.Event(12, "Gecikmiş olay"));
+                } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+                JProgressBar bar = findProgress(frame.getContentPane());
+                Assert.assertEquals("Late events cannot move progress backwards", 65, bar.getValue());
+                Assert.assertTrue(bar.getString(), bar.getString().contains("%65") && bar.getString().contains("Log dosyaları"));
+                Assert.assertFalse(bar.isIndeterminate());
                 frame.getContentPane().setSize(frame.getWidth(), frame.getHeight()); layout(frame.getContentPane());
                 BufferedImage preview = new BufferedImage(frame.getContentPane().getWidth(), frame.getContentPane().getHeight(), BufferedImage.TYPE_INT_RGB);
                 Graphics2D graphics=preview.createGraphics();frame.getContentPane().printAll(graphics);graphics.dispose();
@@ -60,6 +72,7 @@ public class SwingUiIT {
         try{
             SwingUtilities.invokeAndWait(()->{
                 CollectorFrame frame=new CollectorFrame(config,true,new ServerEndpointSettings(store));ref.set(frame);frame.addNotify();frame.validate();
+                Assert.assertEquals(config.applicationTitle + " — Admin", frame.getTitle());
                 Assert.assertNotNull(findMode(frame.getContentPane()));Assert.assertNotNull(findTable(frame.getContentPane()));Assert.assertNotNull(findTextArea(frame.getContentPane()));
                 Assert.assertEquals(3,countTextFields(frame.getContentPane()));
                 findField(frame.getContentPane(),"serverHost").setText("192.0.2.25");
@@ -163,6 +176,12 @@ public class SwingUiIT {
             Assert.assertTrue("Failure reaches background writer", writing.await(10, java.util.concurrent.TimeUnit.SECONDS));
             long tick = System.nanoTime();
             SwingUtilities.invokeAndWait(() -> Assert.assertFalse(findButton(ref.get().getContentPane(), "Hata Raporu Oluştur").isEnabled()));
+            SwingUtilities.invokeAndWait(() -> {
+                JProgressBar bar = findProgress(ref.get().getContentPane());
+                Assert.assertNotNull(bar); Assert.assertTrue(bar.isStringPainted());
+                Assert.assertFalse("Failed collection stops at its last percentage", bar.isIndeterminate());
+                Assert.assertTrue(bar.getValue() < 100); Assert.assertTrue(bar.getString().contains("İşlem tamamlanamadı"));
+            });
             Assert.assertTrue("EDT stays responsive during logging", (System.nanoTime() - tick) / 1_000_000 < 1000);
             release.countDown();
             boolean[] shown = {false}; long deadline = System.nanoTime() + 10_000_000_000L;
@@ -197,6 +216,13 @@ public class SwingUiIT {
         for (Component c : parent.getComponents()) {
             if (c instanceof JButton && ((JButton) c).getText().equals(label)) return (JButton) c;
             if (c instanceof Container) { JButton found = findButton((Container) c, label); if (found != null) return found; }
+        }
+        return null;
+    }
+    private static JProgressBar findProgress(Container parent) {
+        for (Component c : parent.getComponents()) {
+            if (c instanceof JProgressBar) return (JProgressBar) c;
+            if (c instanceof Container) { JProgressBar found = findProgress((Container) c); if (found != null) return found; }
         }
         return null;
     }

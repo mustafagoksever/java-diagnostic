@@ -47,7 +47,7 @@ function Forward-Activity {
                 try{
                     $entry=$line|ConvertFrom-Json
                     if([string]::IsNullOrWhiteSpace([string]$entry.message)){throw 'Activity message missing'}
-                    $entries.Add([pscustomobject]@{timestampUtc=$entry.timestampUtc;readOrder=$entries.Count;message=[string]$entry.message})
+                    $entries.Add([pscustomobject]@{timestampUtc=$entry.timestampUtc;readOrder=$entries.Count;message=[string]$entry.message;percent=$entry.percent;stage=$entry.stage})
                 }catch{Activity-Warning ($file.Name+':record') ($file.Name+' icinde gecersiz gunluk satiri atlandi; diger kayitlar ve rapor toplama devam ediyor.')}
             }
             $activityOffsets[$file.Name]=$offset+$lastNewline+1
@@ -56,7 +56,7 @@ function Forward-Activity {
         finally{if($inputLog){$inputLog.Dispose()}}
     }
     foreach($entry in @($entries|Sort-Object timestampUtc,readOrder)){
-        Emit @{event='progress';message=[string]$entry.message}
+        Emit @{event='progress';message=[string]$entry.message;percent=$entry.percent;stage=$entry.stage}
     }
 }
 function Sha256($path){$inputFile=[IO.File]::OpenRead($path);$hash=[Security.Cryptography.SHA256]::Create();try{return [BitConverter]::ToString($hash.ComputeHash($inputFile)).Replace('-','')}finally{$inputFile.Dispose();$hash.Dispose()}}
@@ -195,7 +195,7 @@ try {
     $machine=Get-WmiObject Win32_ComputerSystem -ComputerName $request.host -Credential $credential -Authentication PacketPrivacy -Impersonation Impersonate
     $remoteClass=Get-WmiObject -List -Class Win32_Process -ComputerName $request.host -Credential $credential -Authentication PacketPrivacy -Impersonation Impersonate
     if(!$machine -or !$remoteClass){throw 'WMI server system/process metadata missing'}
-    Emit @{event='progress';message='[WMI] BAGLANDI: sunucu sistem bilgisi ve islem sinifi erisimi dogrulandi.'}
+    Emit @{event='progress';message='[WMI] BAGLANDI: sunucu sistem bilgisi ve islem sinifi erisimi dogrulandi.';percent=7;stage='Sunucu bağlantısı hazırlanıyor...'}
     $phase='SMB paylasim erisimi'
     $workShare=Select-WorkSpace
     $remoteRoot=[IO.Path]::Combine($workRoot,('diagnostic-remote-'+$jobId))
@@ -246,7 +246,7 @@ try {
     $created=$remoteClass.Create($command,'C:\Windows',$null)
     if($created.ReturnValue -ne 0){$workerLaunchAttempted=$false;throw ('WMI Create failed: '+$created.ReturnValue)}
     $workerPid=[long]$created.ProcessId
-    Emit @{event='progress';message=('[WMI] Toplama yardimcisi baslatildi; PID '+$workerPid+'. Sunucu adimlari izleniyor.')}
+    Emit @{event='progress';message=('[WMI] Toplama yardimcisi baslatildi; PID '+$workerPid+'. Sunucu adimlari izleniyor.');percent=10;stage='Sunucuda tanılama başlatıldı...'}
     $watch=[Diagnostics.Stopwatch]::StartNew();$lastProgress='';$nextLifeCheck=10;$nextHeartbeat=5
     $phase='Sunucu sonucunu bekleme'
     $marker=Share-Path 'complete.json'
@@ -293,7 +293,7 @@ try {
     }
     if(!$completed){$warnings+=,('Remote helper exit not confirmed; temporary files preserved: '+$remoteRoot)}
     $phase='Dosya aktarimi'
-    Emit @{event='progress';message='Dosyalar indiriliyor; SHA-256 ve boyutlari dogrulaniyor...'}
+    Emit @{event='progress';message='Dosyalar indiriliyor; SHA-256 ve boyutlari dogrulaniyor...';percent=72;stage='Dosyalar indiriliyor ve doğrulanıyor...'}
     $destinationRoot=[IO.Path]::GetFullPath($request.localDirectory)
     [void][IO.Directory]::CreateDirectory($destinationRoot)
     $downloaded=0
@@ -306,7 +306,7 @@ try {
         Copy-Item -LiteralPath (Share-Path ('data\'+$relative)) -Destination $destination
         if((Get-Item -LiteralPath $destination).Length -ne $file.size -or (Sha256 $destination) -ne $file.sha256){throw ('Download verification failed: '+$relative)}
         $downloaded++
-        Emit @{event='progress';message=('[Aktarim] '+$downloaded+'/'+@($manifest.files).Count+' | indirildi ve SHA-256/boyut dogrulandi: '+$relative)}
+        Emit @{event='progress';message=('[Aktarim] '+$downloaded+'/'+@($manifest.files).Count+' | indirildi ve SHA-256/boyut dogrulandi: '+$relative);percent=[int][Math]::Floor(72+13*$downloaded/[Math]::Max(1,@($manifest.files).Count));stage=('Dosyalar indiriliyor ve doğrulanıyor ('+$downloaded+'/'+@($manifest.files).Count+')...')}
     }
     Emit @{event='progress';message=('[Aktarim] TAMAMLANDI: '+$downloaded+' dosya indirildi; butunluk kontrolleri gecti.')}
     Emit @{event='progress';message='[Temizlik] Sunucudaki bu rapora ait gecici is klasoru temizleniyor...'}

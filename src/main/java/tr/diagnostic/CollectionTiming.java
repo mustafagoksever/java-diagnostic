@@ -20,8 +20,10 @@ final class CollectionTiming {
         log.accept("Toplama başlangıç zamanı: " + TIME.format(ZonedDateTime.now()));
         boolean completed = false;
         try {
+            CollectionProgress.report(log, 0, "Rapor hazırlanıyor...");
             T result = task.run();
             completed = true;
+            CollectionProgress.report(log, 100, "Rapor hazır.");
             return result;
         } finally {
             double seconds = (System.nanoTime() - started) / 1_000_000_000.0;

@@ -42,6 +42,7 @@ public final class CollectionOrchestrator {
                 Thread.sleep(config.collectionDelaySeconds * 1000L);
             }
             ProcessScanner scanner = new ProcessScanner(config, executor);
+            CollectionProgress.report(progress, 5, "Java süreçleri aranıyor...");
             progress.accept("Windows Java süreçleri keşfediliyor...");
             m.discovery = scanner.scan(); m.errors.addAll(m.discovery.errors);
             m.toolDiscovery = scanner.tools().inventory();
@@ -72,22 +73,29 @@ public final class CollectionOrchestrator {
             }
             resolved.put("sources", sources); DiagnosticReportGenerator.writeJson(staging.resolve("resolved-config.json"), resolved);
             progress.accept("Windows sistem ve kaynak bilgileri toplanıyor...");
+            CollectionProgress.report(progress, 15, "Sistem bilgileri toplanıyor...");
             try { new SystemInfoCollector(config, executor).collect(targets, staging, m.errors); }
             catch (IOException e) { m.errors.add("SystemInfo: " + e); }
             ThreadDumpCollector dumps = new ThreadDumpCollector(config, executor, scanner);
+            int finishedTargets = 0;
             for (JavaProcessInfo target : targets) {
+                CollectionProgress.report(progress, 25 + 40 * finishedTargets / targets.size(), "Java tanılama verileri toplanıyor (" + (finishedTargets + 1) + "/" + targets.size() + ")...");
                 JvmReport jvm = new JvmReport(target); m.jvms.add(jvm);
                 try { dumps.collect(jvm, staging, progress); }
                 catch (IOException e) { m.errors.add("PID " + target.pid + ": " + e); }
+                finishedTargets++;
             }
             progress.accept("Log dosyaları kopyalanıyor...");
+            CollectionProgress.report(progress, 65, "Log dosyaları kopyalanıyor...");
             m.logs.addAll(new LogCollector().collect(config, staging));
             progress.accept("Thread dump ve log hata özetleri hazırlanıyor...");
+            CollectionProgress.report(progress, 75, "Tanılama verileri analiz ediliyor...");
             try { new ThreadDumpAnalyzer().write(m.jvms, staging); }
             catch (IOException e) { m.errors.add("ThreadDumpAnalyzer: " + e); }
             try { new LogErrorAnalyzer().write(staging); }
             catch (IOException e) { m.errors.add("LogErrorAnalyzer: " + e); }
             if (monitorResult != null) {
+                CollectionProgress.report(progress, 80, "Kaynak ölçümü tamamlanıyor...");
                 progress.accept("CPU/RAM ölçümünün tamamlanması bekleniyor...");
                 try { monitor.write(monitorResult.get(config.resourceMonitoringSeconds + config.scanTimeoutSeconds + 10L, TimeUnit.SECONDS), staging, m.errors); }
                 catch (ExecutionException | TimeoutException | IOException e) { m.errors.add("ResourceMonitor: " + e); monitorResult.cancel(true); }
@@ -97,10 +105,13 @@ public final class CollectionOrchestrator {
                 || m.logs.stream().anyMatch(l -> l.status.equals("FAILED") || l.changedDuringCopy);
             m.collectionStatus = incomplete ? "PARTIAL" : "COMPLETE";
             m.completedAt = Instant.now().toString();
+            CollectionProgress.report(progress, 88, "Rapor dosyaları hazırlanıyor...");
             new DiagnosticReportGenerator().write(m, staging);
             progress.accept("AES-256 ZIP oluşturuluyor ve bütün dosyalar doğrulanıyor...");
+            CollectionProgress.report(progress, 94, "ZIP oluşturuluyor ve doğrulanıyor...");
             result.archive = config.outputDirectory.resolve("diagnostic-" + id + ".zip");
             new ZipEncryptionService().createAndValidate(staging, result.archive, password);
+            CollectionProgress.report(progress, 99, "Geçici dosyalar temizleniyor...");
         } finally {
             if (monitorResult != null && !monitorResult.isDone()) monitorResult.cancel(true);
             monitoring.shutdownNow();

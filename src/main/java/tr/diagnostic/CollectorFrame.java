@@ -26,6 +26,7 @@ public final class CollectorFrame extends JFrame {
     private final JTextArea activity = new JTextArea(9, 90);
     private final JLabel status = new JLabel("Hazır. Collector süreçleri listelenir; rapora hedef olarak alınmaz.");
     private final JProgressBar progress = new JProgressBar();
+    private boolean collectionProgressActive;
     private final DefaultTableModel rows = new DefaultTableModel(new String[]{"PID", "Süreç / Uygulama", "Ana sınıf", "Sahip", "Oturum", "Başlangıç (UTC)", "Java sürümü", "Rapor hedefi"}, 0) {
         @Override public boolean isCellEditable(int row, int column) { return false; }
     };
@@ -39,9 +40,11 @@ public final class CollectorFrame extends JFrame {
         this(config, admin, endpointSettings, new FailureReportWriter());
     }
     CollectorFrame(CollectorConfiguration config, boolean admin, ServerEndpointSettings endpointSettings, FailureReportWriter failureReports) {
-        super(admin?"Java 8 Windows Diagnostic Collector — Admin":"Hata Raporu"); this.config = config;
+        super(config.applicationTitle + (admin ? " — Admin" : "")); this.config = config;
         this.admin=admin;this.endpointSettings=endpointSettings;
         this.failureReports=failureReports;
+        progress.setStringPainted(true); progress.setString("Hazır");
+        progress.setToolTipText("Tamamlanan işlem aşamalarına göre ilerleme; kalan süre tahmini değildir.");
         status.setText(admin?"Hazır. Collector süreçleri listelenir; rapora hedef olarak alınmaz.":"Hazır.");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new java.awt.event.WindowAdapter() {
@@ -108,7 +111,21 @@ public final class CollectorFrame extends JFrame {
             }
         }.execute();
     }
-    private void busy(boolean value) { collect.setEnabled(!value); list.setEnabled(!value); open.setEnabled(!value); mode.setEnabled(!value); username.setEnabled(!value); serverPassword.setEnabled(!value); serverHost.setEnabled(!value);saveHost.setEnabled(!value);progress.setIndeterminate(value); }
+    private void busy(boolean value) {
+        collect.setEnabled(!value); list.setEnabled(!value); open.setEnabled(!value); mode.setEnabled(!value); username.setEnabled(!value); serverPassword.setEnabled(!value); serverHost.setEnabled(!value);saveHost.setEnabled(!value);
+        progress.setIndeterminate(value && !collectionProgressActive);
+        if (!collectionProgressActive) {
+            if (value) { progress.setValue(0); progress.setString("İşlem sürüyor..."); }
+            else progress.setString("Hazır");
+        }
+    }
+    private void showCollectionProgress(CollectionProgress.Event event) {
+        if (event.percent < 0) { if (admin) append(event.message); return; }
+        if (event.percent < progress.getValue()) return;
+        progress.setValue(Math.min(100, event.percent));
+        progress.setString("%" + progress.getValue() + " — " + event.message);
+        status.setText(event.message);
+    }
     private String userMessage(String value) { return value == null ? "Bilinmeyen hata" : value; }
     private void append(String value) { value = userMessage(value); if(admin){activity.append(value + "\n"); activity.setCaretPosition(activity.getDocument().getLength());}status.setText(value); }
     private void appendMessages(List<String> messages) {
@@ -149,23 +166,37 @@ public final class CollectorFrame extends JFrame {
         final char[] password;
         try { password = ReportPassword.configured(config); }
         catch (Exception e) { if (remote != null) remote.close(); failure(e,"Rapor oluşturma"); return; }
+        collectionProgressActive = true; progress.setValue(0); progress.setString("%0 — Rapor hazırlanıyor...");
         busy(true); append("Tanılama raporu hazırlanıyor...");
-        new SwingWorker<CollectionOrchestrator.Result, String>() {
+        new SwingWorker<CollectionOrchestrator.Result, CollectionProgress.Event>() {
             @Override protected CollectionOrchestrator.Result doInBackground() throws Exception {
-                try { return remote == null ? new CollectionOrchestrator(config).collect(null, password, message -> {if(admin)publish(message);}) : new RemoteCollectionOrchestrator(config).collect(null, password, remote, message -> {if(admin)publish(message);}); }
+                CollectionProgress listener = new CollectionProgress() {
+                    @Override public void accept(String message) { if (admin) publish(new CollectionProgress.Event(-1, message)); }
+                    @Override public void update(int percent, String stage) { publish(new CollectionProgress.Event(percent, stage)); }
+                };
+                try { return remote == null ? new CollectionOrchestrator(config).collect(null, password, listener) : new RemoteCollectionOrchestrator(config).collect(null, password, remote, listener); }
                 finally { if (remote != null) remote.close(); }
             }
-            @Override protected void process(List<String> messages) { appendMessages(messages); }
+            @Override protected void process(List<CollectionProgress.Event> events) {
+                List<String> messages = new java.util.ArrayList<>();
+                for (CollectionProgress.Event event : events) {
+                    if (event.percent < 0) messages.add(event.message);
+                    else showCollectionProgress(event);
+                }
+                appendMessages(messages);
+            }
             @Override protected void done() {
                 busy(false);
                 try {
                     CollectionOrchestrator.Result result = get();
+                    boolean complete = "COMPLETE".equals(result.manifest.collectionStatus) && result.warnings.isEmpty();
+                    showCollectionProgress(new CollectionProgress.Event(100, complete ? "Rapor hazır." : "Rapor hazır; bazı bilgiler alınamadı."));
+                    collectionProgressActive = false;
                     if(admin){
                         append("Doğrulanmış ZIP: " + result.archive);
                         int dumps = result.manifest.jvms.stream().mapToInt(j -> j.dumpCount).sum();
                         JOptionPane.showMessageDialog(CollectorFrame.this, "Rapor: " + result.archive + "\nDurum: " + result.manifest.collectionStatus + "\nThread dump sayısı: " + dumps + "\nAyrıntılar ZIP içindeki Manifest.json dosyasında.", "Rapor hazır", JOptionPane.INFORMATION_MESSAGE);
                     }else{
-                        boolean complete="COMPLETE".equals(result.manifest.collectionStatus)&&result.warnings.isEmpty();
                         append(complete?"Hata raporu hazır.":"Rapor hazır; bazı bilgiler alınamadı.");
                         JOptionPane.showMessageDialog(CollectorFrame.this,"Rapor: "+result.archive+(complete?"":"\nBazı bilgiler alınamadı; ayrıntılar raporun içindedir."),"Rapor hazır",JOptionPane.INFORMATION_MESSAGE);
                     }
@@ -186,6 +217,7 @@ public final class CollectorFrame extends JFrame {
         }.execute();
     }
     private void failure(Exception e, String operation) {
+        if (collectionProgressActive) progress.setString("%" + progress.getValue() + " — İşlem tamamlanamadı.");
         Throwable cause = e instanceof ExecutionException ? e.getCause() : e;
         final char[] serverSecret = serverPassword.getPassword();
         final char[] archiveSecret = config.zipPasswordCopy();
@@ -202,6 +234,7 @@ public final class CollectorFrame extends JFrame {
             }
             @Override protected void done() {
                 busy(false);
+                collectionProgressActive = false;
                 java.nio.file.Path record = null;
                 try { record = get(); } catch (Exception writeFailure) { /* Report logging failure without hiding the original error. */ }
                 String message = admin ? "İşlem başarısız: " + detail : "İşlem tamamlanamadı.";

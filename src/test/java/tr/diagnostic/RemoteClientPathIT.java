@@ -135,6 +135,12 @@ public class RemoteClientPathIT {
             JsonObject result=null;
             for(String line:output.split("\\r?\\n")){JsonObject event=JsonParser.parseString(line).getAsJsonObject();if("result".equals(ResourceMonitor.text(event,"event")))result=event;}
             Assert.assertNotNull(output,result);
+            boolean verifiedDownloadProgress = false;
+            for (String line : output.split("\\r?\\n")) {
+                JsonObject entry = JsonParser.parseString(line).getAsJsonObject();
+                if (entry.has("percent") && !entry.get("percent").isJsonNull() && entry.get("percent").getAsInt() == 85) verifiedDownloadProgress = true;
+            }
+            Assert.assertEquals("Transfer progress completes only after hash verification", failure == null, verifiedDownloadProgress);
             if("wmi".equals(failure)){
                 Assert.assertFalse(result.get("success").getAsBoolean());
                 Assert.assertTrue(output,output.contains("[WMI] BAGLANILAMADI"));

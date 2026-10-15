@@ -1,4 +1,4 @@
-# JAVA 8 WINDOWS DIAGNOSTIC COLLECTOR — SUNUCU KONFİGÜRASYONU
+# ASELSAN ESM DIAGNOSTIC — SUNUCU KONFİGÜRASYONU
 # Fotoğraflardaki 14 kaynak salt okunur collector şemasına uyarlandı.
 # UTF-8 YAML dosyasıdır; # satırları açıklamadır. Windows yollarını tek
 # tırnakla yazın; / veya \ kullanılabilir. Alan adları sabittir.
@@ -7,6 +7,7 @@
 
 # mode: remote=uzak sunucu (varsayılan), local=bu bilgisayar.
 # Admin ekranından oturumluk değiştirilebilir; CLI: --local/--remote.
+applicationTitle: 'Aselsan ESM diagnostic'     # Normal ve admin pencerelerinin başlığı.
 mode: remote
 
 # ZIP parolası yalnız burada tanımlıdır; sunucu giriş parolasından ayrıdır.

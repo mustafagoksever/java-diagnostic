@@ -24,10 +24,22 @@ public class CollectionActivityTest {
         };
         char[] password=ZipEncryptionService.generatePassword();
         try(RemoteConnection connection=connection()){
-            CollectionOrchestrator.Result result=new RemoteCollectionOrchestrator(config,fake).collect(null,password,connection,message->{
-                if(message.startsWith("Toplama bitiş zamanı:"))Assert.assertFalse("Finish must include cleanup",Files.exists(stagingPath[0]));
-                messages.add(message);
+            List<Integer> percentages = new ArrayList<>();
+            CollectionOrchestrator.Result result=new RemoteCollectionOrchestrator(config,fake).collect(null,password,connection,new CollectionProgress() {
+                @Override public void accept(String message) {
+                    if(message.startsWith("Toplama bitiş zamanı:"))Assert.assertFalse("Finish must include cleanup",Files.exists(stagingPath[0]));
+                    messages.add(message);
+                }
+                @Override public void update(int percent, String stage) {
+                    if (percent == 100) {
+                        Assert.assertFalse("100% follows cleanup", Files.exists(stagingPath[0]));
+                        Assert.assertTrue("100% follows archive creation", config.outputDirectory.toFile().listFiles((dir, name) -> name.endsWith(".zip")).length > 0);
+                    }
+                    percentages.add(percent);
+                }
             });
+            Assert.assertEquals(Integer.valueOf(100), percentages.get(percentages.size() - 1));
+            for (int i = 1; i < percentages.size(); i++) Assert.assertTrue(percentages.get(i) >= percentages.get(i - 1));
             assertTiming(messages,false);
             try(ZipFile zip=new ZipFile(result.archive.toFile(),password)){
                 Assert.assertNotNull(zip.getFileHeader("debug/discovery/jps.txt"));Assert.assertNotNull(zip.getFileHeader("debug/queries/identity.json"));

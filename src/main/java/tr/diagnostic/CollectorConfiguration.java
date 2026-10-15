@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class CollectorConfiguration {
+    public String applicationTitle = "Aselsan ESM diagnostic";
     public String mode = "remote";
     public String remoteHost = "";
     public String remoteUsername = "";

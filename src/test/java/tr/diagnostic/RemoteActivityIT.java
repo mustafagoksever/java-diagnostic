@@ -8,6 +8,19 @@ import org.junit.*;
 
 /** Real PowerShell journal reader: no network or physical serial ports. */
 public class RemoteActivityIT {
+    @Test public void percentageAndStageSurviveJournalForwarding() throws Exception {
+        Assume.assumeTrue(PowerShell.isWindows()); Path root=Files.createTempDirectory("diagnostic-progress-journal-");
+        try {
+            Path source=Files.write(root.resolve("client.ps1"),PowerShell.resource("remote-client.ps1").getBytes(StandardCharsets.UTF_8));
+            Files.write(root.resolve("activity-worker.jsonl"),"{\"timestampUtc\":\"2026-10-15T00:00:00Z\",\"message\":\"detail\",\"percent\":45,\"stage\":\"Veriler toplanıyor\"}\n".getBytes(StandardCharsets.UTF_8));
+            String setup="$ErrorActionPreference='Stop';$tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile('"+quote(source)+"',[ref]$tokens,[ref]$issues);"
+                +"$fn=$ast.Find({param($a)$a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Forward-Activity'},$true);. ([scriptblock]::Create($fn.Extent.Text));"
+                +"$activityOffsets=@{};function Share-Path($relative){return '"+quote(root)+"'};function Emit($entry){$entry|ConvertTo-Json -Compress};Forward-Activity;Forward-Activity;";
+            CommandResult result=new PowerShell(new ProcessCommandExecutor()).run(setup,15000);Assert.assertTrue(result.error(),result.success());
+            JsonObject event=JsonParser.parseString(result.stdout.trim()).getAsJsonObject();
+            Assert.assertEquals(45,event.get("percent").getAsInt());Assert.assertEquals("Veriler toplanıyor",event.get("stage").getAsString());
+        } finally { FileSupport.deleteTree(root); }
+    }
     @Test public void fastStepsAndPartialUtf8RecordsAreForwardedOnceWithoutLoss() throws Exception {
         Assume.assumeTrue(PowerShell.isWindows());Path root=Files.createTempDirectory("diagnostic-activity-");
         try{

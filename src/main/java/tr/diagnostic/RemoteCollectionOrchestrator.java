@@ -67,11 +67,14 @@ public final class RemoteCollectionOrchestrator {
         m.mode = "remote"; m.targetHost = connection.host; m.transport = "WMI/DCOM + SMB; C:/Temp then D:/Temp job folders; existing server JDK; no installed service/agent";
         m.reportId = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(Instant.now()) + "-" + UUID.randomUUID().toString().substring(0, 8);
         try {
+            CollectionProgress.report(progress, 2, "Rapor klasörü hazırlanıyor...");
             progress.accept("[Hazırlık] Yerel rapor çalışma klasörü oluşturuldu; erişim izinleri ayarlanıyor.");
             FileSupport.restrictDirectory(staging);
             progress.accept("[Bağlantı] Uzak toplama başlatılıyor; WMI ve SMB erişim sonuçları sırayla günlüğe yazılacak.");
+            CollectionProgress.report(progress, 4, "Sunucuya bağlanılıyor...");
             JsonObject event = transport.execute(request, staging, connection, progress);
             JsonObject remote = event.getAsJsonObject("result"); Gson gson = new Gson();
+            CollectionProgress.report(progress, 86, "Sunucu verilerinden rapor hazırlanıyor...");
             progress.accept("[Aktarım] Sunucu sonuçları bu bilgisayara alındı; rapor hazırlanıyor.");
             m.toolDiscovery = remote.has("toolDiscovery") && remote.get("toolDiscovery").isJsonObject() ? remote.getAsJsonObject("toolDiscovery") : null;
             m.ping = remote.has("ping") && remote.get("ping").isJsonObject() ? remote.getAsJsonObject("ping") : null;
@@ -111,6 +114,7 @@ public final class RemoteCollectionOrchestrator {
                 else { new ResourceMonitor(config, new ProcessCommandExecutor()).write(samples, staging, m.errors); progress.accept("[Rapor] Kaynak izleme JSON verisinden CSV ve ölçüm özeti yazıldı."); }
             }
             progress.accept("Sunucu dump/log analizleri hazırlanıyor...");
+            CollectionProgress.report(progress, 89, "Tanılama verileri analiz ediliyor...");
             new RemoteDiagnosticsReportWriter().write(m, staging);
             progress.accept("[Rapor] Ping ve VxWorks sonuç özetleri, task/socket tabloları hazırlandı.");
             new ThreadDumpAnalyzer().write(m.jvms, staging);
@@ -124,12 +128,15 @@ public final class RemoteCollectionOrchestrator {
                 || (m.vxworks != null && !RemoteDiagnosticsReportWriter.flag(m.vxworks,"success"))
                 || m.operations.stream().anyMatch(o -> !o.success);
             m.collectionStatus = incomplete ? "PARTIAL" : "COMPLETE"; m.completedAt = Instant.now().toString();
+            CollectionProgress.report(progress, 92, "Rapor dosyaları hazırlanıyor...");
             new DiagnosticReportGenerator().write(m, staging);
             progress.accept("[Rapor] Manifest, süreç listesi ve dosya SHA-256 envanteri yazıldı. Durum: " + m.collectionStatus);
             result.archive = config.outputDirectory.resolve("diagnostic-remote-" + m.reportId + ".zip");
             progress.accept("Bu bilgisayarda AES-256 ZIP oluşturuluyor ve doğrulanıyor...");
+            CollectionProgress.report(progress, 94, "ZIP oluşturuluyor ve doğrulanıyor...");
             new ZipEncryptionService().createAndValidate(staging, result.archive, password);
             progress.accept("[ZIP] TAMAMLANDI: AES-256 ZIP oluşturuldu; bütün girdiler okunarak doğrulandı.");
+            CollectionProgress.report(progress, 99, "Geçici dosyalar temizleniyor...");
             return result;
         } catch (IOException | InterruptedException | RuntimeException e) {
             progress.accept("[HATA] Uzak rapor işlemi tamamlanamadı: " + e.getMessage());

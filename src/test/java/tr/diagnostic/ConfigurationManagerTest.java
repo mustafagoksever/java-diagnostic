@@ -16,6 +16,8 @@ public class ConfigurationManagerTest {
     }
     @Test public void deploymentValuesHaveNoHiddenDefaultsAndZipPasswordComesOnlyFromYaml() throws Exception {
         CollectorConfiguration defaults = load("logs: []\n");
+        Assert.assertEquals("Aselsan ESM diagnostic", defaults.applicationTitle);
+        Assert.assertEquals("Özel Başlık", load("applicationTitle: 'Özel Başlık'\n").applicationTitle);
         Assert.assertEquals("", defaults.remoteHost);
         Assert.assertEquals("", defaults.installationPath);
         Assert.assertEquals(0, defaults.zipPasswordCopy().length);

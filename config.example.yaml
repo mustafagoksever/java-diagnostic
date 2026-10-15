@@ -4,6 +4,7 @@
 
 # zipPassword: ZIP için en az 12 karakter. Bu örneğe gerçek parola koymayın.
 # GUI kullanımı öncesi burada tanımlayın; CLI --generate-password/--password-env de desteklenir.
+applicationTitle: 'Aselsan ESM diagnostic'     # Pencere başlığı; admin modunda sonuna Admin eklenir.
 mode: remote                  # local seçerseniz bu bilgisayarda toplar.
 remote:
   # Sunucuda salt okunur ağ/süreç/servis/sürücü/oturum/saat ve olay sorguları.
