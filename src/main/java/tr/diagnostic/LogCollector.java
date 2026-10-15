@@ -4,13 +4,18 @@ import tr.diagnostic.DiagnosticReportGenerator.LogResult;
 import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
 
 /** Read-only directory and individual-file snapshots; never executes collected scripts. */
 public final class LogCollector {
+    private final Clock clock;
+    public LogCollector() { this(Clock.systemUTC()); }
+    LogCollector(Clock clock) { this.clock = clock; }
     public List<LogResult> collect(CollectorConfiguration config, Path staging) throws IOException {
         List<LogResult> results = new ArrayList<>();
+        Instant filterStartedAt = clock.instant();
         Path reportDirectory = config.outputDirectory.toAbsolutePath().normalize();
         int index = 0;
         for (CollectorConfiguration.LogDirectory spec : config.logs) {
@@ -24,7 +29,7 @@ public final class LogCollector {
             Path logsRoot = staging.resolve("logs");
             Path dest = logsRoot.resolve(destination).normalize();
             if (!dest.startsWith(logsRoot)) throw new IOException("Log hedefi staging dışında.");
-            long cutoff = spec.modifiedWithinHours == 0 ? Long.MIN_VALUE : Instant.now().minusSeconds(spec.modifiedWithinHours * 3600L).toEpochMilli();
+            long cutoff = spec.modifiedWithinHours == 0 ? Long.MIN_VALUE : filterStartedAt.minusSeconds(spec.modifiedWithinHours * 3600L).toEpochMilli();
             if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root)) {
                 results.add(result(root, "FAILED", "Kaynak yok, erişilemiyor veya sembolik bağlantı.")); continue;
             }
@@ -57,7 +62,7 @@ public final class LogCollector {
     private static boolean excluded(Path file, Path output, Path realOutput) throws IOException {
         return file.toAbsolutePath().normalize().startsWith(output) || file.toRealPath().startsWith(realOutput);
     }
-    private static void copy(Path source, Path target, CollectorConfiguration.LogDirectory spec, long cutoff, Path output, Path realOutput, Path staging, List<LogResult> results) throws IOException {
+    private void copy(Path source, Path target, CollectorConfiguration.LogDirectory spec, long cutoff, Path output, Path realOutput, Path staging, List<LogResult> results) throws IOException {
         if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("Log toplama iptal edildi.");
         if (excluded(source, output, realOutput)) return;
         BasicFileAttributes before = Files.readAttributes(source, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -65,6 +70,13 @@ public final class LogCollector {
         String name = source.getFileName().toString().toLowerCase(Locale.ROOT);
         if (!spec.extensions.isEmpty() && spec.extensions.stream().noneMatch(name::endsWith)) return;
         if (before.lastModifiedTime().toMillis() < cutoff) return;
+        // Check against the time of inspection so logs updated during traversal
+        // are not mistaken for future-dated files.
+        Instant observedAt = clock.instant();
+        if (spec.modifiedWithinHours > 0 && before.lastModifiedTime().toMillis() > observedAt.toEpochMilli()) {
+            results.add(result(source, "SKIPPED_FUTURE_TIMESTAMP", "FUTURE_TIMESTAMP: modified=" + before.lastModifiedTime().toInstant() + "; observed=" + observedAt));
+            return;
+        }
         if (before.size() > spec.maxFileSizeBytes) { results.add(result(source, "SKIPPED_SIZE", "Maksimum dosya boyutu aşıldı.")); return; }
         LogResult r = result(source, "COPIED", null); results.add(r);
         r.destination = DiagnosticReportGenerator.relative(staging, target);

@@ -468,6 +468,10 @@ function Copy-Log($source,$target,$spec,$cutoff) {
         if($before.LastWriteTimeUtc -lt $cutoff){Activity ('[Log] FILTRE DISI: '+$source+' | tarih filtresi');return}
         if(@($spec.extensions).Count -gt 0 -and $before.Extension.ToLowerInvariant() -notin $spec.extensions){Activity ('[Log] FILTRE DISI: '+$source+' | uzanti filtresi');return}
         $attempted=$true
+        $observedAt=[DateTime]::UtcNow
+        if($spec.modifiedWithinHours -gt 0 -and $before.LastWriteTimeUtc -gt $observedAt){
+            $log.status='SKIPPED_FUTURE_TIMESTAMP';$log.error='FUTURE_TIMESTAMP: modified='+$before.LastWriteTimeUtc.ToString('o')+'; observed='+$observedAt.ToString('o');return $log
+        }
         Activity ('[Log] Kopyalama basladi: '+$source+' -> '+$log.destination)
         if($before.Length -gt $spec.maxFileSizeBytes){$log.status='SKIPPED_SIZE';$log.error='Maximum file size exceeded';return $log}
         if(Test-Path -LiteralPath $target){$log.status='FAILED';$log.error='DESTINATION_COLLISION: previous copy preserved';return $log}
@@ -487,6 +491,12 @@ function Copy-Log($source,$target,$spec,$cutoff) {
         if($attempted -or $log.status -eq 'FAILED'){Activity ('[Log] '+$log.status+' | '+$source+' | '+$log.bytesCopied+' bayt | '+$log.error)}
     }
     return $log
+}
+function Write-CollectionSummary {
+    $failedAttempts=@($result.operations|Where-Object{!$_.success}).Count
+    foreach($jvm in $result.jvms){$failedAttempts+=@($jvm.operations|Where-Object{!$_.success}).Count}
+    $incompleteLogs=@($result.logs|Where-Object{$_.status -ne 'COPIED' -or $_.changedDuringCopy}).Count
+    Activity ('[Sunucu] Toplama adimlari bitti; ust duzey hata/not='+$result.errors.Count+' | basarisiz komut denemesi='+$failedAttempts+' | eksik/degisen log='+$incompleteLogs+'. Ciktilar envantere aliniyor ve SHA-256 hesaplanacak.') 72 'Sunucu dosyaları aktarım için doğrulanıyor...'
 }
 try {
     $collectionPaths=if($settings.action -eq 'collect'){Resolve-CollectionPaths}else{$null}
@@ -568,6 +578,7 @@ try {
             }
             Write-Json (Join-Path $jobRoot 'progress.json') @{jobId=$settings.jobId;phase='logs';message=if($logsReady){'BAT tamamlandi; sunucu loglari kopyalaniyor...'}else{'BAT basarisiz; log kopyalama yapilmayacak.'}}
         }else{Activity '[Log hazirligi] Kopyalama oncesi BAT ayarlarda tanimli degil; dogrudan kaynaklar taranacak.'}
+        $logFilterStartedAt=[DateTime]::UtcNow
         foreach($spec in $settings.logs) {
             Deadline
             Activity '[Ilerleme] Log kaynagi isleniyor.' ([int][Math]::Floor(66+4*$sources.Count/[Math]::Max(1,@($settings.logs).Count))) 'Log dosyaları kopyalanıyor...'
@@ -578,7 +589,7 @@ try {
             $dest=if($spec.destination){$spec.destination}else{$index++;'{0:d2}' -f $index}
             $logsRoot=Join-Path $dataRoot 'logs';$targetRoot=[IO.Path]::GetFullPath((Join-Path $logsRoot $dest))
             if(!$targetRoot.StartsWith($logsRoot+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Unsafe log destination'}
-            $cutoff=if($spec.modifiedWithinHours -eq 0){[DateTime]::MinValue}else{[DateTime]::UtcNow.AddHours(-$spec.modifiedWithinHours)}
+            $cutoff=if($spec.modifiedWithinHours -eq 0){[DateTime]::MinValue}else{$logFilterStartedAt.AddHours(-$spec.modifiedWithinHours)}
             $sourceResultStart=$result.logs.Count
             try {
                 $item=Get-Item -LiteralPath $source -Force
@@ -597,10 +608,10 @@ try {
             }catch{$result.logs+=,[pscustomobject]@{source=$source;status='FAILED';error=$_.Exception.Message};Activity ('[Log kaynagi] BASARISIZ: '+$source+' | '+$_.Exception.Message)}
             finally{
                 $newResults=@($result.logs|Select-Object -Skip $sourceResultStart)
-                Activity ('[Log kaynagi] Tarama bitti: '+$source+' | kopyalanan='+@($newResults|Where-Object{$_.status -like 'COPIED*'}).Count+' | hatali='+@($newResults|Where-Object{$_.status -eq 'FAILED'}).Count+' | boyut nedeniyle atlanan='+@($newResults|Where-Object{$_.status -eq 'SKIPPED_SIZE'}).Count+$(if(!$newResults.Count){' | Kaynak bos veya tum dosyalar filtre disi; filtre kayitlarina bakin.'}else{''}))
+                Activity ('[Log kaynagi] Tarama bitti: '+$source+' | kopyalanan='+@($newResults|Where-Object{$_.status -like 'COPIED*'}).Count+' | hatali='+@($newResults|Where-Object{$_.status -eq 'FAILED'}).Count+' | boyut nedeniyle atlanan='+@($newResults|Where-Object{$_.status -eq 'SKIPPED_SIZE'}).Count+' | gelecek tarih nedeniyle atlanan='+@($newResults|Where-Object{$_.status -eq 'SKIPPED_FUTURE_TIMESTAMP'}).Count+$(if(!$newResults.Count){' | Kaynak bos veya tum dosyalar filtre disi; filtre kayitlarina bakin.'}else{''}))
             }
         }
-        $result.resolved=[pscustomobject]@{installationDirectory=$install;applicationDirectory=$app;sources=$sources;timeFilterClock='server UTC'}
+        $result.resolved=[pscustomobject]@{installationDirectory=$install;applicationDirectory=$app;sources=$sources;timeFilterClock='server UTC';logFilterStartedAtUtc=$logFilterStartedAt.ToString('o')}
     }
 }catch{Activity ('[Sunucu] ISLEM HATASI: '+$_.Exception.Message);$result.errors+=,$_.Exception.Message}
 finally{
@@ -620,7 +631,7 @@ finally{
     if($monitorOutput){$monitorOutput.Dispose()};if($monitorError){$monitorError.Dispose()}
     if($cleanupRequested -or (Test-Path -LiteralPath (Join-Path $jobRoot 'cancel.txt'))){Delete-OwnJob}
     else {
-        Activity ('[Sunucu] Toplama adimlari bitti; '+$result.errors.Count+' hata/not. Ciktilar envantere aliniyor ve SHA-256 hesaplanacak.') 72 'Sunucu dosyaları aktarım için doğrulanıyor...'
+        Write-CollectionSummary
         $debugRoot=Join-Path $dataRoot 'debug';[void][IO.Directory]::CreateDirectory($debugRoot)
         foreach($journal in @(Get-ChildItem -LiteralPath $jobRoot -Filter 'activity-*.jsonl' -File)){[IO.File]::Copy($journal.FullName,(Join-Path $debugRoot $journal.Name),$true)}
         $serverCompleted=[DateTimeOffset]::Now

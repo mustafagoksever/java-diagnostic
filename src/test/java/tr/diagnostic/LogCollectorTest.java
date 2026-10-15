@@ -5,6 +5,7 @@ import org.junit.rules.TemporaryFolder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.FileTime;
+import java.time.*;
 import java.util.*;
 
 public class LogCollectorTest {
@@ -79,5 +80,50 @@ public class LogCollectorTest {
         Assert.assertEquals("first", new String(Files.readAllBytes(staging.resolve("logs/KA/conf/settings.xml")), StandardCharsets.UTF_8));
         Assert.assertEquals("second", new String(Files.readAllBytes(b), StandardCharsets.UTF_8));
         Assert.assertEquals(1, Files.getLastModifiedTime(a).toMillis());
+    }
+    @Test public void boundsDateFilterAndRecordsFutureFilesWithoutChangingThem() throws Exception {
+        Path root = temp.getRoot().toPath(), source = Files.createDirectory(root.resolve("dated"));
+        Instant now = Instant.parse("2026-10-15T07:18:04Z");
+        for (String name : Arrays.asList("old.log", "boundary.log", "current.log", "future.log")) write(source.resolve(name), name);
+        Files.setLastModifiedTime(source.resolve("old.log"), FileTime.from(now.minusSeconds(48 * 3600 + 1)));
+        Files.setLastModifiedTime(source.resolve("boundary.log"), FileTime.from(now.minusSeconds(48 * 3600)));
+        Files.setLastModifiedTime(source.resolve("current.log"), FileTime.from(now));
+        Files.setLastModifiedTime(source.resolve("future.log"), FileTime.from(now.plusSeconds(1)));
+        String before = FileSupport.sha256(source.resolve("future.log"));
+        CollectorConfiguration c = new CollectorConfiguration(); c.outputDirectory = root.resolve("output");
+        Path staging = Files.createDirectories(c.outputDirectory.resolve("staging"));
+        CollectorConfiguration.LogDirectory spec = new CollectorConfiguration.LogDirectory(); spec.path = source; spec.modifiedWithinHours = 48; c.logs.add(spec);
+        List<DiagnosticReportGenerator.LogResult> results = new LogCollector(Clock.fixed(now, ZoneOffset.UTC)).collect(c, staging);
+        Assert.assertEquals(3, results.size()); Assert.assertEquals(2, results.stream().filter(r -> "COPIED".equals(r.status)).count());
+        DiagnosticReportGenerator.LogResult future = results.stream().filter(r -> r.source.endsWith("future.log")).findFirst().get();
+        Assert.assertEquals("SKIPPED_FUTURE_TIMESTAMP", future.status); Assert.assertTrue(future.error.contains("FUTURE_TIMESTAMP"));
+        Assert.assertTrue(future.isIncomplete()); Assert.assertEquals(0, future.bytesCopied);
+        Assert.assertFalse(Files.exists(staging.resolve("logs/01/future.log"))); Assert.assertFalse(Files.exists(staging.resolve("logs/01/old.log")));
+        Assert.assertEquals(before, FileSupport.sha256(source.resolve("future.log")));
+        spec.modifiedWithinHours = 0; spec.destination = "unfiltered";
+        results = new LogCollector(Clock.fixed(now, ZoneOffset.UTC)).collect(c, staging);
+        Assert.assertEquals(4, results.size()); Assert.assertFalse(results.stream().anyMatch(DiagnosticReportGenerator.LogResult::isIncomplete));
+    }
+    @Test public void doesNotRejectLogsUpdatedAfterTheScanStarted() throws Exception {
+        Path root = temp.getRoot().toPath(); Instant start = Instant.parse("2026-10-15T07:18:04Z");
+        Path source = write(root.resolve("active.log"), "active"); Files.setLastModifiedTime(source, FileTime.from(start.plusSeconds(1)));
+        CollectorConfiguration c = new CollectorConfiguration(); c.outputDirectory = root.resolve("output");
+        Path staging = Files.createDirectories(c.outputDirectory.resolve("staging"));
+        CollectorConfiguration.LogDirectory spec = new CollectorConfiguration.LogDirectory(); spec.path = source; c.logs.add(spec);
+        Clock duringScan = new Clock() {
+            private int calls;
+            public ZoneId getZone() { return ZoneOffset.UTC; }
+            public Clock withZone(ZoneId zone) { return this; }
+            public Instant instant() { return calls++ == 0 ? start : start.plusSeconds(2); }
+        };
+        Assert.assertEquals("COPIED", new LogCollector(duringScan).collect(c, staging).get(0).status);
+    }
+    @Test public void onlyUnchangedCopiedLogsAreComplete() {
+        DiagnosticReportGenerator.LogResult log = new DiagnosticReportGenerator.LogResult();
+        for (String status : Arrays.asList("FAILED", "SKIPPED_SIZE", "SKIPPED_FUTURE_TIMESTAMP", "SKIPPED_PREPARATION_FAILED", "COPIED_CHANGING_SOURCE", null)) {
+            log.status = status; Assert.assertTrue(String.valueOf(status), log.isIncomplete());
+        }
+        log.status = "COPIED"; Assert.assertFalse(log.isIncomplete());
+        log.changedDuringCopy = true; Assert.assertTrue(log.isIncomplete());
     }
 }

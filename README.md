@@ -102,7 +102,9 @@ CLI stdout/stderr UTF-8 kullanır. Eski Windows konsolunda Türkçe karakterler 
 | 2 | Yanlış CLI kullanımı / kısa parola |
 | 3 | Doğrulanmış kısmi rapor veya başarısız Windows keşfi |
 
-`PARTIAL` rapor kullanılabilir. Module erişim eksikliği, bir tanılama aracının başarısızlığı, okunamayan log, değişen aktif dosya veya eksik dump bu durumu oluşturur. Standart kullanıcıyla bazı işletim sistemi süreçlerinin modülleri okunamadığı için tüm seçili JVM'lerde üç dump başarılı olsa bile keşif eksikliği raporu `PARTIAL` yapabilir. `COMPLETE`, keşfedilemeyen JVM olmadığına dair işletim sistemi garantisi değildir.
+`PARTIAL` rapor kullanılabilir. Module erişim eksikliği, bir tanılama aracının başarısızlığı, okunamayan log, değişen aktif dosya, boyut sınırı nedeniyle atlanan dosya veya eksik dump bu durumu oluşturur. Tarih filtresi açıkken inceleme anından ileride değiştirilme zamanı taşıyan dosyalar `SKIPPED_FUTURE_TIMESTAMP` olarak kaydedilir ve rapor `PARTIAL` olur. Alt tarih sınırı log taramasının başlangıcına göre sabittir; tarama sırasında normal güncellenen dosyalar gelecekte sayılmaz. `modifiedWithinHours: 0` tarih filtresini kapatır. Standart kullanıcıyla bazı işletim sistemi süreçlerinin modülleri okunamadığı için tüm seçili JVM'lerde üç dump başarılı olsa bile keşif eksikliği raporu `PARTIAL` yapabilir. `COMPLETE`, keşfedilemeyen JVM olmadığına dair işletim sistemi garantisi değildir.
+
+Thread dump analizi ekranın ağ/modal beklemelerini bütün örneklerde arar; son örnekte düzelmiş bir bekleme önceki örnek sayısıyla ve kanıtın ait olduğu örnekle korunur. Hiçbir dump çözümlenemediğinde sayılar metinde `Bilinmiyor`, JSON'da `null` ve `status: UNAVAILABLE` olur. Log hata özeti standart hata anahtarlarının yanında geçersiz/süresi dolmuş lisans ve uygulamanın Türkçe haberleşme arızası kalıplarını da tarar; `.7z` içeriklerini açmaz. Sunucu bitiş günlüğü üst düzey hata/not, başarısız araç/toplama denemesi ve eksik/değişen log sayılarını ayrı gösterir.
 
 ## Swing ve administrator çalıştırma
 
@@ -167,7 +169,7 @@ ZIP'in kökündeki **`sunucu-kaynak-kullanimi.txt`**, sunucunun toplam CPU kulla
 - `kaynak-izleme-ozeti.txt`: sunucu ve PID başına ortalama/en yüksek kaynak kullanımı. Süreç CPU değeri mantıksal CPU sayısına bölünerek sunucu toplamı gibi 0–100 ölçeğine getirilir. Working set MiB olarak gösterilir; Java heap miktarı değildir. PID başlangıç zamanı her tur doğrulanır.
 - `disk-bilgileri.txt`: yerel sabit disklerin toplam/boş alanı GiB olarak. İzin veya sayaç hataları manifestte bulunur.
 - `analiz-ozeti.txt` ve `thread-dump-analysis.json`: son dump'taki thread durumları, BLOCKED thread'ler, en az üç örnek boyunca değişmeyen state/stack/lock bilgileri ve aracın açık deadlock bildirimleri. Analiz HotSpot dump biçimini çözümler; çözümlenemeyen biçimler açıkça belirtilir. Aynı stack veya WAITING durumu tek başına donma kanıtı değildir.
-- `log-hata-ozeti.txt`: kopyalanmış metin loglarında ERROR, FATAL, Exception, OutOfMemoryError ve timeout eşleşmeleri. Her dosyanın son 8 MiB kesiti, son 20 eşleşme ve en fazla 200 dosya incelenir. Kesitten verilen satır numarası tüm dosyanın satır numarası değildir. UTF-8, bozuksa Windows-1254 okuması denenir; ham kopya korunur.
+- `log-hata-ozeti.txt`: kopyalanmış metin loglarında ERROR, FATAL, Exception, OutOfMemoryError, timeout, lisans hatası ve Türkçe haberleşme arızası eşleşmeleri. Her dosyanın son 8 MiB kesiti ve en fazla 200 dosya incelenir. Dosya başına en fazla 20 örnek gösterilir; son lisans hatası örneği korunur, kalan yerler son eşleşmelere ayrılır. Kesitten verilen satır numarası tüm dosyanın satır numarası değildir. UTF-8, bozuksa Windows-1254 okuması denenir; ham kopya korunur.
 - `resolved-config.json`: raporda kullanılan gerçek kurulum/uygulama kökleri ve kaynak-hedef eşleşmeleri.
 
 Eksik ölçümler sıfır varsayılmaz. Bu özetler incelemeyi hızlandırır; kesin kök neden kararı için ham dump ve loglar da incelenmelidir.

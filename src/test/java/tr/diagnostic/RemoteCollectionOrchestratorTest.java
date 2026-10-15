@@ -11,6 +11,31 @@ import net.lingala.zip4j.ZipFile;
 
 public class RemoteCollectionOrchestratorTest {
     @Rule public TemporaryFolder temp = new TemporaryFolder();
+    @Test public void skippedLogsMakeOtherwiseSuccessfulCollectionsPartial() throws Exception {
+        for (String status : Arrays.asList("COPIED", "SKIPPED_SIZE", "SKIPPED_FUTURE_TIMESTAMP")) {
+            CollectorConfiguration c = new CollectorConfiguration(); c.outputDirectory = temp.newFolder().toPath(); c.resourceMonitoringSeconds = 0;
+            RemoteTransport fake = (settings, staging, connection, progress) -> {
+                Files.write(staging.resolve("remote-system.json"), "{errors:[]}".getBytes(StandardCharsets.UTF_8));
+                JsonObject event = JsonParser.parseString("{result:{discovery:{windowsDiscoverySucceeded:true,processes:[],errors:[]},jvms:[{process:{pid:42,processName:'java.exe'},dumpCount:3,operations:[]}],logs:[{source:'C:/app.log',status:'" + status + "'}],errors:[],operations:[]}}").getAsJsonObject();
+                JsonArray operations = event.getAsJsonObject("result").getAsJsonArray("jvms").get(0).getAsJsonObject().getAsJsonArray("operations");
+                for (int i = 1; i <= 3; i++) {
+                    Files.write(staging.resolve("dump-" + i + ".txt"), "\"worker\" nid=0x1 waiting\n   java.lang.Thread.State: WAITING\n\tat java.lang.Object.wait(Native Method)\n".getBytes(StandardCharsets.UTF_8));
+                    operations.add(JsonParser.parseString("{type:'thread-dump',sample:" + i + ",success:true,artifact:'dump-" + i + ".txt'}"));
+                }
+                return event;
+            };
+            char[] password = ZipEncryptionService.generatePassword();
+            try (RemoteConnection connection = new RemoteConnection("server", "server\\user", "auto", "session-secret".toCharArray())) {
+                CollectionOrchestrator.Result result = new RemoteCollectionOrchestrator(c, fake).collect(null, password, connection, s -> {});
+                Assert.assertEquals(status, "COPIED".equals(status) ? "COMPLETE" : "PARTIAL", result.manifest.collectionStatus);
+                try (ZipFile zip = new ZipFile(result.archive.toFile(), password); InputStream input = zip.getInputStream(zip.getFileHeader("Manifest.json"))) {
+                    JsonObject manifest = JsonParser.parseReader(new InputStreamReader(input, StandardCharsets.UTF_8)).getAsJsonObject();
+                    Assert.assertEquals(result.manifest.collectionStatus, manifest.get("collectionStatus").getAsString());
+                    Assert.assertEquals(status, manifest.getAsJsonArray("logs").get(0).getAsJsonObject().get("status").getAsString());
+                }
+            } finally { Arrays.fill(password, '\0'); }
+        }
+    }
     @Test public void malformedRemoteErrorIsRecordedWithoutLosingTheArchive() throws Exception {
         CollectorConfiguration c = new CollectorConfiguration(); c.outputDirectory = temp.getRoot().toPath(); c.resourceMonitoringSeconds = 0;
         RemoteTransport fake = (settings, staging, connection, progress) -> {

@@ -123,7 +123,7 @@ public final class RemoteCollectionOrchestrator {
             progress.accept("[Analiz] Log hata eşleşmeleri tarandı; hata özeti tamamlandı.");
             boolean incomplete = m.discovery == null || !m.discovery.windowsDiscoverySucceeded || m.jvms.isEmpty() || !m.errors.isEmpty()
                 || m.jvms.stream().anyMatch(j -> j.dumpCount < 3 || j.operations.stream().anyMatch(o -> !o.success))
-                || m.logs.stream().anyMatch(l -> "FAILED".equals(l.status) || l.changedDuringCopy)
+                || m.logs.stream().anyMatch(LogResult::isIncomplete)
                 || (m.ping != null && !RemoteDiagnosticsReportWriter.flag(m.ping,"success"))
                 || (m.vxworks != null && !RemoteDiagnosticsReportWriter.flag(m.vxworks,"success"))
                 || m.operations.stream().anyMatch(o -> !o.success);

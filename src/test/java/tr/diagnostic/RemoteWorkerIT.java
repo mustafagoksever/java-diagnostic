@@ -83,6 +83,13 @@ public class RemoteWorkerIT {
             Assert.assertTrue(activity,activity.contains("3/3 dump basarili"));
             Assert.assertTrue(activity,activity.contains("uzanti filtresi"));
             Assert.assertTrue(activity,activity.contains("SKIPPED_SIZE"));
+            long failedAttempts = 0;
+            for (JsonElement operation : result.getAsJsonArray("operations")) if (!operation.getAsJsonObject().get("success").getAsBoolean()) failedAttempts++;
+            for (JsonElement jvm : result.getAsJsonArray("jvms")) for (JsonElement operation : jvm.getAsJsonObject().getAsJsonArray("operations")) if (!operation.getAsJsonObject().get("success").getAsBoolean()) failedAttempts++;
+            Assert.assertTrue(activity, activity.contains("basarisiz komut denemesi=" + failedAttempts));
+            Assert.assertTrue(activity, activity.contains("eksik/degisen log=1"));
+            Assert.assertTrue(activity, activity.contains("ust duzey hata/not=" + result.getAsJsonArray("errors").size()));
+            Assert.assertFalse(activity.contains("; 0 hata/not."));
             Assert.assertTrue(activity,activity.contains("[Log kaynagi] Tarama bitti"));
             Assert.assertTrue(Files.isRegularFile(job.resolve("data/logs/recursive/nested/recent.LOG")));
             Assert.assertFalse(Files.exists(job.resolve("data/logs/recursive/nested/ignored.xml")));Assert.assertFalse(Files.exists(job.resolve("data/logs/recursive/nested/large.log")));

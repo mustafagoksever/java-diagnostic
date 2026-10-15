@@ -102,7 +102,7 @@ public final class CollectionOrchestrator {
             }
             boolean incomplete = !m.discovery.windowsDiscoverySucceeded || targets.isEmpty() || !m.errors.isEmpty()
                 || m.jvms.stream().anyMatch(j -> j.dumpCount < ThreadDumpCollector.DUMP_COUNT || j.operations.stream().anyMatch(o -> !o.success))
-                || m.logs.stream().anyMatch(l -> l.status.equals("FAILED") || l.changedDuringCopy);
+                || m.logs.stream().anyMatch(LogResult::isIncomplete);
             m.collectionStatus = incomplete ? "PARTIAL" : "COMPLETE";
             m.completedAt = Instant.now().toString();
             CollectionProgress.report(progress, 88, "Rapor dosyaları hazırlanıyor...");

@@ -78,6 +78,7 @@ public final class DiagnosticReportGenerator {
         public String error;
         public long bytesCopied;
         public boolean changedDuringCopy;
+        public boolean isIncomplete() { return !"COPIED".equals(status) || changedDuringCopy; }
     }
     public static final class FileRecord {
         public String path;
